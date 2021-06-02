@@ -1,10 +1,13 @@
 package com.isadore.isadoremod;
 
 
-import net.minecraft.block.Blocks;
+import com.isadore.isadoremod.components.KeyBinds;
+import com.isadore.isadoremod.components.LayoutHandler;
+import com.isadore.isadoremod.main.EventHandler;
+import com.isadore.isadoremod.main.UserData;
+import net.minecraft.client.Minecraft;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.InterModComms;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -12,19 +15,44 @@ import net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent;
 import net.minecraftforge.fml.event.lifecycle.InterModProcessEvent;
 import net.minecraftforge.fml.event.server.FMLServerStartingEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.config.Configurator;
 
-import java.util.stream.Collectors;
+import java.util.UUID;
 
 // The value here should match an entry in the META-INF/mods.toml file
-@Mod("isadoremod")
+@Mod(IsadoreMod.MODID)
 public class IsadoreMod
 {
     public static final String MODID = "isadoremod";
     // Directly reference a log4j logger.
-    private static final Logger LOGGER = LogManager.getLogger();
-    public static final Database DB = new Database();
+    public static final Logger LOGGER = LogManager.getLogger();
+    private static final Minecraft mc = Minecraft.getInstance();
+    public static boolean disabled = false;
+    public static boolean playerIsIsadore() {
+        return mc.session.getUsername().equals("Issadoor");
+    }
+    public static String playerID() {
+        return fromTrimmed(mc.session.getPlayerID()).toString();
+    }
+
+    public static UUID fromTrimmed(String trimmedUUID) throws IllegalArgumentException{
+        if(trimmedUUID == null) throw new IllegalArgumentException();
+        StringBuilder builder = new StringBuilder(trimmedUUID.trim());
+        /* Backwards adding to avoid index adjustments */
+        try {
+            builder.insert(20, "-");
+            builder.insert(16, "-");
+            builder.insert(12, "-");
+            builder.insert(8, "-");
+        } catch (StringIndexOutOfBoundsException e){
+            throw new IllegalArgumentException();
+        }
+
+        return UUID.fromString(builder.toString());
+    }
 
     public IsadoreMod() {
         // Register the setup method for modloading
@@ -38,35 +66,30 @@ public class IsadoreMod
 
         // Register ourselves for server and other game events we are interested in
         MinecraftForge.EVENT_BUS.register(new EventHandler());
+        Configurator.setLevel("net.minecraft.network", Level.TRACE);
     }
 
     private void setup(final FMLCommonSetupEvent event)
     {
         // some preinit code
-        LOGGER.info("HELLO FROM PREINIT");
-        LOGGER.info("DIRT BLOCK >> {}", Blocks.DIRT.getRegistryName());
+        UserData.init();
+        LayoutHandler.refreshLayouts();
+        UserData.loadInitialStates();
     }
 
     private void doClientStuff(final FMLClientSetupEvent event) {
         // do something that can only be done on the client
-        LOGGER.info("Got game settings {}", event.getMinecraftSupplier().get().gameSettings);
     }
 
     private void enqueueIMC(final InterModEnqueueEvent event)
     {
         // some example code to dispatch IMC to another mod
-        InterModComms.sendTo("examplemod", "helloworld", () -> { LOGGER.info("Hello world from the MDK"); return "Hello world";});
-
         KeyBinds.register();
-
     }
 
     private void processIMC(final InterModProcessEvent event)
     {
         // some example code to receive and process InterModComms from other mods
-        LOGGER.info("Got IMC {}", event.getIMCStream().
-                map(m->m.getMessageSupplier().get()).
-                collect(Collectors.toList()));
     }
     // You can use SubscribeEvent and let the Event Bus discover methods to call
     @SubscribeEvent
