@@ -4,17 +4,21 @@ import com.isadore.isadoremod.IsadoreMod;
 import com.isadore.isadoremod.main.EventHandler;
 import com.isadore.isadoremod.main.GuiOverlay;
 import com.isadore.isadoremod.main.UserData;
+import com.isadore.isadoremod.main.WebSocketHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.AbstractClientPlayerEntity;
 import net.minecraft.client.gui.screen.inventory.ChestScreen;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.inventory.container.ClickType;
 import net.minecraft.inventory.container.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.event.TickEvent;
 
 import javax.annotation.Nullable;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 public class Recordings {
@@ -82,22 +86,39 @@ public class Recordings {
             if((playingRecording == null || playedTicks >= playingRecording.ticks.size() - 1) && playRecordings && event.phase == TickEvent.Phase.END) {
                 resetRecording();
                 playedTicks = 0;
-            } else if(playingRecording != null && continuePlayingTimeStamp <= System.currentTimeMillis() && playRecordings && !recordActions && playedTicks < playingRecording.ticks.size() && mc.currentScreen == null && EventHandler.tickQueue.size() == 0) {
+            } else if(!EventHandler.playerInHub && WebSocketHandler.connected && playingRecording != null && continuePlayingTimeStamp <= System.currentTimeMillis() && playRecordings && !recordActions && playedTicks < playingRecording.ticks.size() && mc.currentScreen == null && EventHandler.tickQueue.size() == 0) {
                 UserData.RecordingType currentType = getCurrentPickType();
 
+                int rand1 = new Random().nextInt(40 * 60 * 60);
+                int rand2 = new Random().nextInt(40 * 60 * 30);
+                if(rand1 == 0 || rand2 == 0) {
+                    double sleepTime;
+                    if(rand1 == 0)
+                        sleepTime = SnapCraftUtils.exponentialRandomTime(1, 5d, 27d);
+                    else
+                        sleepTime = SnapCraftUtils.exponentialRandomTime(1, 1d, 5d);
+                    String time = ZonedDateTime.ofInstant(new Timestamp((long) sleepTime).toInstant(), ZoneId.of("America/New_York")).format(DateTimeFormatter.ofPattern("hh:mm:ss a"));
+                    WebSocketHandler.sendMessage(WebSocketHandler.MessageType.AutoMinerStatus, String.format("Sleeping until %s", time));
+                    continuePlayingTimeStamp = sleepTime;
+                    resetPlayerActions();
+                    return;
+                }
+
                 if(playerIsAtSpawn()) {
-                   if(playingRecording.type != getNeededType()) {
+                    if(playingRecording.type != getNeededType()) {
                        resetRecording();
-                   } else if(playedTicks > 10) {
-                       resetRecording();
-                       resetPlayerActions();
-                       sellBlocks();
-                       return;
-                   }
+                    } else if(playedTicks > 10) {
+                        resetRecording();
+                        resetPlayerActions();
+                        sellBlocks();
+                        return;
+                    }
                 }
 
                 if(playedTicks >= 150) {
                     if(playerIsOutsideMine()) {
+                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(500, 2123));
+                        EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + playerMineNotNull()));
                         resetRecording();
                         resetPlayerActions();
                         sellBlocks();
@@ -111,10 +132,11 @@ public class Recordings {
                     }
                 }
 
-                int pickDura = InventoryManagement.getDurability(InventoryManagement.getItemStackInInventoryForId("minecraft:diamond_pickaxe"));
+                ItemStack pick = InventoryManagement.getItemStackInInventoryForId("minecraft:diamond_pickaxe");
+                int pickDura = InventoryManagement.getDurability(pick);
                 if(currentType == UserData.RecordingType.GPICK && pickDura <= gpickRepDurability) {
                     resetPlayerActions();
-                    EventHandler.cancelInputUntil = SnapCraftUtils.squaredRandomTime(560, 2300);
+                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(560, 2300));
                     EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/pv 2"));
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(250, 350));
                     EventHandler.tickQueue.add(() -> {
@@ -127,26 +149,29 @@ public class Recordings {
                                         bestStack = s;
                                 }
                             }
+                            if(bestStack == null) {
+                                playRecordings = false;
+                                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.AutoMinerStatus, "No more tier Vs.");
+                                return;
+                            }
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(250, 350));
-                            int repStackSlot = bestStack.slotNumber;
-                            EventHandler.tickQueue.add(new InventoryManagement.MouseAction(repStackSlot, 0, ClickType.PICKUP));
-                            Slot pick = ((ChestScreen) mc.currentScreen).getContainer().getSlot(82);
+                            EventHandler.tickQueue.add(new InventoryManagement.MouseAction(bestStack.slotNumber, 0, ClickType.PICKUP));
                             double tokensNeeded = Math.ceil((double) pick.getStack().getDamage() / 500);
                             for (double i = 0; i < tokensNeeded; i++) {
                                 EventHandler.tickQueue.add(new EventHandler.QueueDelay(25, 57));
                                 EventHandler.tickQueue.add(new InventoryManagement.MouseAction(82, 0, ClickType.PICKUP));
                             }
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(250, 350));
-                            EventHandler.tickQueue.add(new InventoryManagement.MouseAction(repStackSlot, 0, ClickType.PICKUP));
+                            EventHandler.tickQueue.add(new InventoryManagement.MouseAction(bestStack.slotNumber, 0, ClickType.PICKUP));
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(250, 350));
-                            EventHandler.tickQueue.add(() -> mc.currentScreen.closeScreen());
+                            EventHandler.tickQueue.add(() -> { if(mc.currentScreen != null)  mc.currentScreen.closeScreen(); });
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(1323, 2200));
                         }
                     });
                     gpickRepDurability = SnapCraftUtils.exponentialRandomInt(2, 375, 575);
                     return;
                 } else if (currentType == UserData.RecordingType.SLICE && pickDura < 100) {
-                    EventHandler.cancelInputUntil = SnapCraftUtils.squaredRandomTime(560, 2300);
+                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(560, 2300));
                     EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/pv 3"));
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(250, 350));
                     EventHandler.tickQueue.add(() -> {
@@ -160,66 +185,88 @@ public class Recordings {
                                 }
                             }
                             if(freshPick == null) {
+                                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.AutoMinerStatus, "No more usable slicing picks.");
                                 playRecordings = false;
                                 return;
                             }
                             EventHandler.tickQueue.add(new InventoryManagement.MouseAction(freshPick.slotNumber, 0, ClickType.SWAP));
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(300, 750));
-                            EventHandler.tickQueue.add(() -> mc.currentScreen.closeScreen());
+                            EventHandler.tickQueue.add(() -> { if(mc.currentScreen != null)  mc.currentScreen.closeScreen(); });
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(300, 750));
                         }
                     });
-
+                    return;
                 }
 
                 if(playingRecording.type != currentType) {
                     sellBlocks(true);
-                    EventHandler.cancelInputUntil = SnapCraftUtils.squaredRandomTime(560, 2300);
+                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(560, 2300));
                     EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/pv 1"));
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(200, 350));
-                    EventHandler.tickQueue.add(new InventoryManagement.MouseAction(45, 0, ClickType.SWAP));
-                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
-                    EventHandler.tickQueue.add(new InventoryManagement.MouseAction(46, 1, ClickType.SWAP));
-                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
                     if(currentType == UserData.RecordingType.GPICK) {
                         EventHandler.tickQueue.add(() -> {
                             if(mc.currentScreen instanceof ChestScreen) {
-                                int storedPrismarineBlocks = 0;
-                                int storedDiamondBlocks = 0;
-                                int storedEmeraldBlocks = 0;
+                                Map<String, Integer> storedBlocks = new HashMap<>();
+                                storedBlocks.put("minecraft:diamond_block", 0);
+                                storedBlocks.put("minecraft:emerald_block", 0);
+                                storedBlocks.put(SnapCraftUtils.getPrismarineType(), 0);
                                 for (Slot s : InventoryManagement.getChestSlots()) {
-                                    if(InventoryManagement.itemIDsEqual(s.getStack(), SnapCraftUtils.getPrismarineType()))
-                                        storedPrismarineBlocks += s.getStack().getCount();
-                                    if(InventoryManagement.itemIDsEqual(s.getStack(), "minecraft:diamond_block"))
-                                        storedDiamondBlocks += s.getStack().getCount();
-                                    if(InventoryManagement.itemIDsEqual(s.getStack(), "minecraft:emerald_block"))
-                                        storedEmeraldBlocks += s.getStack().getCount();
+                                    for (Map.Entry<String, Integer> e : storedBlocks.entrySet()) {
+                                        if(InventoryManagement.itemIDsEqual(s.getStack(), e.getKey()))
+                                            e.setValue(e.getValue() + s.getStack().getCount());
+                                    }
                                 }
-                                int requiredPrismarineBlocks = 0;
-                                int requiredDiamondBlocks = 0;
-                                int requiredEmeraldBlocks = 0;
+                                Map<String, Integer> requiredBlocks = new HashMap<>();
+                                requiredBlocks.put("minecraft:diamond_block", 0);
+                                requiredBlocks.put("minecraft:emerald_block", 0);
+                                requiredBlocks.put(SnapCraftUtils.getPrismarineType(), 0);
                                 for (InventoryManagement.StoredSlot s : LayoutHandler.allLayouts.get(0).slots) {
-                                    if(InventoryManagement.itemIDsEqual(s.parseStackData(), SnapCraftUtils.getPrismarineType()))
-                                        requiredPrismarineBlocks += s.parseStackData().getCount();
-                                    if(InventoryManagement.itemIDsEqual(s.parseStackData(), "minecraft:diamond_block"))
-                                        requiredDiamondBlocks += s.parseStackData().getCount();
-                                    if(InventoryManagement.itemIDsEqual(s.parseStackData(), "minecraft:emerald_block"))
-                                        requiredEmeraldBlocks += s.parseStackData().getCount();
+                                    for (Map.Entry<String, Integer> e : requiredBlocks.entrySet()) {
+                                        if(InventoryManagement.itemIDsEqual(s.parseStackData(), e.getKey()))
+                                            e.setValue(e.getValue() + 1);
+                                    }
                                 }
-
-                                if(storedPrismarineBlocks < 2 * requiredPrismarineBlocks || storedDiamondBlocks < 2 * requiredDiamondBlocks || storedEmeraldBlocks < 2 * requiredEmeraldBlocks) {
-                                    storeCurrentSlice = true;
+                                boolean hadExtraBlocks = false;
+                                for (Map.Entry<String, Integer> e : requiredBlocks.entrySet()) {
+                                    int storedCount = storedBlocks.get(e.getKey());
+                                    if(storedCount < 2 * e.getValue())
+                                        storeCurrentSlice = true;
+                                    if(storedCount > e.getValue() * 64) {
+                                        int extraStacks = (storedCount - (e.getValue() * 64)) / 64;
+                                        int movedStacks = 0;
+                                        for (Slot s : InventoryManagement.getChestSlots()) {
+                                            if(InventoryManagement.itemIDsEqual(s.getStack(), e.getKey()) && movedStacks < extraStacks && s.getStack().getCount() == 64) {
+                                                EventHandler.tickQueue.add(new EventHandler.QueueDelay(150, 300));
+                                                EventHandler.tickQueue.add(new InventoryManagement.MouseAction(s.slotNumber, 0, ClickType.QUICK_MOVE));
+                                                hadExtraBlocks = true;
+                                                movedStacks++;
+                                            }
+                                        }
+                                    }
+                                }
+                                if(hadExtraBlocks) {
+                                    EventHandler.tickQueue.add(() -> { if(mc.currentScreen != null)  mc.currentScreen.closeScreen(); });
+                                    sellBlocks(true);
+                                } else {
+                                    EventHandler.tickQueue.add(new InventoryManagement.MouseAction(45, 0, ClickType.SWAP));
+                                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
+                                    EventHandler.tickQueue.add(new InventoryManagement.MouseAction(46, 1, ClickType.SWAP));
+                                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
+                                    EventHandler.tickQueue.add(new InventoryManagement.MouseAction(54, 0, ClickType.PICKUP));
+                                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
+                                    EventHandler.tickQueue.add(new InventoryManagement.MouseAction(47, 0, ClickType.PICKUP));
+                                    LayoutHandler.currentLayoutIndex = 0;
+                                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
+                                    EventHandler.tickQueue.add(() -> LayoutHandler.restoreLayout(true));
+                                    EventHandler.tickQueue.add(() -> mc.player.inventory.currentItem = 0);
                                 }
                             }
                         });
-                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(54, 0, ClickType.PICKUP));
-                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
-                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(47, 0, ClickType.PICKUP));
-                        LayoutHandler.currentLayoutIndex = 0;
-                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
-                        EventHandler.tickQueue.add(() -> LayoutHandler.restoreLayout(true));
-                        EventHandler.tickQueue.add(() -> mc.player.inventory.currentItem = 0);
                     } else {
+                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(45, 0, ClickType.SWAP));
+                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
+                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(46, 1, ClickType.SWAP));
+                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
                         EventHandler.tickQueue.add(new InventoryManagement.MouseAction(47, 0, ClickType.PICKUP));
                         EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
                         EventHandler.tickQueue.add(new InventoryManagement.MouseAction(54, 0, ClickType.PICKUP));
@@ -229,6 +276,16 @@ public class Recordings {
                     }
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(400, 2300));
                     return;
+                }
+
+                int itemCount = InventoryManagement.getFilledSlotCount();
+                if(playingRecording.type == UserData.RecordingType.SLICE && currentType == UserData.RecordingType.SLICE && itemCount == 1) {
+                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(560, 2300));
+                    EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/pv 1"));
+                    LayoutHandler.currentLayoutIndex = 0;
+                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(100, 350));
+                    EventHandler.tickQueue.add(() -> LayoutHandler.restoreLayout(true));
+                    EventHandler.tickQueue.add(() -> mc.player.inventory.currentItem = 0);
                 }
 
                 UserData.TickRecording tick = playingRecording.ticks.get(playedTicks);
@@ -249,13 +306,13 @@ public class Recordings {
                     if(mc.player.inventory.getFirstEmptyStack() == -1 && (GuiOverlay.diamondPercentFull == 1 || GuiOverlay.emeraldPercentFull == 1 || GuiOverlay.prismarinePercentFull == 1)) {
                         resetRecording();
                         resetPlayerActions();
-                        EventHandler.cancelInputUntil = SnapCraftUtils.squaredRandomTime(400, 2123);
+                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(400, 2123));
                         EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + playerMineNotNull()));
                         sellBlocks();
                     } else if (playedTicks >= playingRecording.ticks.size() - 1) {
                         resetRecording();
                         resetPlayerActions();
-                        EventHandler.cancelInputUntil = SnapCraftUtils.squaredRandomTime(400, 2123);
+                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(400, 2123));
                         EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + playerMineNotNull()));
                         sellBlocks();
                     }
@@ -326,30 +383,40 @@ public class Recordings {
     }
 
     public static void sellBlocks(boolean force) {
-        if(InventoryManagement.inventoryPercentFull() >= .3 || force) {
+        int fullSlots1 = InventoryManagement.getFilledSlotCount();
+        UserData.RecordingType type = getCurrentPickType();
+        if(InventoryManagement.inventoryPercentFull() >= .3 || (force && (type == UserData.RecordingType.GPICK && fullSlots1 > 3) || (type == UserData.RecordingType.SLICE && fullSlots1 > 1))) {
             EventHandler.tickQueue.add(new EventHandler.QueueDelay(600, 2300));
             if(storeCurrentSlice) {
                 EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/pv 1"));
                 EventHandler.tickQueue.add(new EventHandler.QueueDelay(300, 500));
-                boolean firstDiamondSlot = false;
-                boolean firstEmeraldSlot = false;
-                boolean firstPrismarineSlot = false;
+                Map<String, List<Integer>> blockSlots = new HashMap<>();
+                blockSlots.put("minecraft:diamond_block", new ArrayList<>());
+                blockSlots.put("minecraft:emerald_block", new ArrayList<>());
+                blockSlots.put(SnapCraftUtils.getPrismarineType(), new ArrayList<>());
                 List<ItemStack> stacks = InventoryManagement.MainInventoryItemsMappedToSlots();
                 for (int i = 0; i < stacks.size(); i++)  {
                     ItemStack stack = stacks.get(i);
-                    if(!firstDiamondSlot && InventoryManagement.itemIDsEqual(stack, "minecraft:diamond_block")) {
-                        firstDiamondSlot = true;
-                        InventoryManagement.shiftDoubleClickSlot(54 + i);
-                    }
-                    if(!firstEmeraldSlot && InventoryManagement.itemIDsEqual(stack, "minecraft:emerald_block")) {
-                        firstEmeraldSlot = true;
-                        InventoryManagement.shiftDoubleClickSlot(54 + i);
-                    }
-                    if(!firstPrismarineSlot && InventoryManagement.itemIDsEqual(stack, SnapCraftUtils.getPrismarineType())) {
-                        firstPrismarineSlot = true;
-                        InventoryManagement.shiftDoubleClickSlot(54 + i);
+                    for(Map.Entry<String, List<Integer>> e : blockSlots.entrySet()) {
+                        if(InventoryManagement.itemIDsEqual(stack, e.getKey()))
+                            e.getValue().add(i);
                     }
                 }
+                for(Map.Entry<String, List<Integer>> e : blockSlots.entrySet()) {
+                    if(e.getValue().size() == 1) {
+                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(e.getValue().get(0) + 54, 0, ClickType.QUICK_MOVE));
+                    } else if(e.getValue().size() > 1) {
+                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(e.getValue().get(0) + 54, 0, ClickType.PICKUP));
+                        EventHandler.tickQueue.add(() -> {
+                            for (int i = 1; i < e.getValue().size(); i++) {
+                                new InventoryManagement.MouseAction(e.getValue().get(i) + 54, 0, ClickType.QUICK_MOVE).run();
+                            }
+                        });
+                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(e.getValue().get(0) + 54, 0, ClickType.PICKUP));
+                        EventHandler.tickQueue.add(new InventoryManagement.MouseAction(e.getValue().get(0) + 54, 0, ClickType.QUICK_MOVE));
+                    }
+                }
+                EventHandler.tickQueue.add(() -> { if(mc.currentScreen != null)  mc.currentScreen.closeScreen(); });
                 storeCurrentSlice = false;
             } else {
                 EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/sell"));
@@ -357,9 +424,8 @@ public class Recordings {
             // Get rid of garbage picked up @ warp "gold"
             EventHandler.tickQueue.add(new EventHandler.QueueDelay(1200, 2300));
             EventHandler.tickQueue.add(() -> {
-                int fullSlots = InventoryManagement.getFilledSlotCount();
-                UserData.RecordingType type = getCurrentPickType();
-                if((type == UserData.RecordingType.GPICK && fullSlots > 3) || (type == UserData.RecordingType.SLICE && fullSlots > 1)) {
+                int fullSlots2 = InventoryManagement.getFilledSlotCount();
+                if((type == UserData.RecordingType.GPICK && fullSlots2 > 3) || (type == UserData.RecordingType.SLICE && fullSlots2 > 1)) {
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(500, 2344));
                     EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/home gold"));
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(500, 1200));
@@ -368,17 +434,18 @@ public class Recordings {
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(200, 400));
                     List<ItemStack> stacks = InventoryManagement.MainInventoryItemsMappedToSlots();
                     for (int i = 0; i < stacks.size(); i++) {
-                        if(!InventoryManagement.itemIDsEqual(stacks.get(i) , new String[]{"minecraft:diamond_pickaxe", "minecraft:paper", "minecraft:diamond_axe", "minecraft:air" })) {
+                        if(!InventoryManagement.itemIDsEqual(stacks.get(i), new String[]{"minecraft:diamond_pickaxe", "minecraft:paper", "minecraft:diamond_axe", "minecraft:air" })) {
                             EventHandler.tickQueue.add(new EventHandler.QueueDelay(150, 350));
                             // Player inventory starts at 54 in double chest
                             EventHandler.tickQueue.add(new InventoryManagement.MouseAction(54 + i, 0, ClickType.QUICK_MOVE));
                         }
                     }
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(150, 350));
-                    EventHandler.tickQueue.add(() -> mc.currentScreen.closeScreen());
+                    EventHandler.tickQueue.add(() -> { if(mc.currentScreen != null)  mc.currentScreen.closeScreen(); });
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(600, 2300));
                     EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + playerMineNotNull()));
                     EventHandler.tickQueue.add(new EventHandler.QueueDelay(600, 1500));
+                    EventHandler.tickQueue.add(Recordings::resetPlayerActions);
                 }
             });
         }
@@ -411,12 +478,22 @@ public class Recordings {
         Double closest = null;
         for (AbstractClientPlayerEntity e : mc.world.getPlayers()) {
             if (!e.getUniqueID().toString().equals(IsadoreMod.playerID())) {
+                String name = e.getDisplayName().getString();
+                String[] staffTags = {"Helper", "Admin", "Owner", "Mod", "Manager"};
+                for (String t : staffTags) {
+                    if(name.startsWith("[" + t + "]"))
+                        return 0.0;
+                }
                 double distance = Math.abs(Math.sqrt(Math.pow(e.getPosX() - mc.player.getPosX(), 2) + Math.pow(e.getPosY() - mc.player.getPosY(), 2) + Math.pow(e.getPosZ() - mc.player.getPosZ(), 2)));
                 if (closest == null || distance < closest)
                     closest = distance;
             }
         }
         return closest;
+    }
+
+    public static boolean percentChance(double chance) {
+        return Math.random() <= (chance/100);
     }
     
 }

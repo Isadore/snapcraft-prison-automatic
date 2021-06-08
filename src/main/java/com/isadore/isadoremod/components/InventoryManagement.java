@@ -189,13 +189,13 @@ public class InventoryManagement {
                     } else if(spacesToMove > 1) {
                         if(itemIDsEqual(mc.player.inventory.getItemStack(), "minecraft:air"))
                             EventHandler.tickQueue.add(new MouseAction(slot.slotNumber, 0, ClickType.PICKUP));
-                        EventHandler.tickQueue.add(() -> {
-                            for(Slot s : allSlots) {
-                                if (s != null && s.canTakeStack(mc.player) && s.getHasStack() && s.isSameInventory(slot) && Container.canAddItemToSlot(s, currentStack, true)) {
-                                    new MouseAction(s.slotNumber, 0, ClickType.QUICK_MOVE).run();
-//                                    tickQueue.add(new MouseAction(s.slotNumber, 0, ClickType.QUICK_MOVE));
+                            EventHandler.tickQueue.add(() -> {
+                                for(Slot s : allSlots) {
+                                    if (s != null && s.canTakeStack(mc.player) && s.getHasStack() && s.isSameInventory(slot) && Container.canAddItemToSlot(s, currentStack, true)) {
+                                        new MouseAction(s.slotNumber, 0, ClickType.QUICK_MOVE).run();
+    //                                    tickQueue.add(new MouseAction(s.slotNumber, 0, ClickType.QUICK_MOVE));
+                                    }
                                 }
-                            }
                         });
                         EventHandler.tickQueue.add(new MouseAction(slot.slotNumber, 0, ClickType.PICKUP));
                         EventHandler.tickQueue.add(new MouseAction(slot.slotNumber, 0, ClickType.QUICK_MOVE));

@@ -1,5 +1,6 @@
 package com.isadore.isadoremod.main;
 
+import com.google.gson.Gson;
 import com.isadore.isadoremod.*;
 import com.isadore.isadoremod.components.*;
 import com.mojang.blaze3d.matrix.MatrixStack;
@@ -26,6 +27,7 @@ import java.text.NumberFormat;
 import java.util.LinkedList;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 public class EventHandler {
 
@@ -38,6 +40,10 @@ public class EventHandler {
 
     public static String lastAHSellPrice = null;
     public static ItemStack lastAHSellItem = null;
+    public static String lastVillagerSalePrice = null;
+    public static String lastVillagerSaleCount = null;
+
+    public static boolean playerInHub = true;
 
     public static class QueueDelay implements Runnable {
         public int min;
@@ -64,17 +70,39 @@ public class EventHandler {
 
     @SubscribeEvent
     public void onMessage(ClientChatReceivedEvent event) {
-        String messageContent = event.getMessage().getString();
+        String messageContent = event.getMessage().getString().trim();
+
+        if(messageContent.startsWith("Received:"))
+            lastVillagerSalePrice = messageContent;
+        if(messageContent.startsWith("Amount Sold:"))
+            lastVillagerSaleCount = messageContent;
+
+        if(messageContent.startsWith("Connected to Hub #"))
+            playerInHub = true;
+
+        if(!playerInHub && messageContent.length() > 0) {
+            if(messageContent.startsWith("From")) {
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.DirectMessage, messageContent);
+            } else if(SnapCraftUtils.messageHasNicknameMatch(messageContent) || messageContent.startsWith("Your friend")) {
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.Mention, messageContent);
+            } else if(messageContent.startsWith("Multiplier:")) {
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.ChatMessage, lastVillagerSaleCount + ", " + lastVillagerSalePrice);
+            } else if(!SnapCraftUtils.messageIsBlackListed(messageContent)) {
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.ChatMessage, messageContent);
+            }
+        }
 
         if(IsadoreMod.disabled) return;
 
-        if(messageContent.equals("  Connected to Prison")) {
+        if(messageContent.equals("Connected to Prison")) {
+            playerInHub = false;
             Integer rankPVCount = SnapCraftUtils.getRankPVCount();
             if(rankPVCount != null && rankPVCount >= 5) {
                 cancelInputUntil = SnapCraftUtils.squaredRandomTime(900, 2500);
                 EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/fly"));
             }
         }
+
         if(messageContent.equals("Scheduled server restart in 1"))
             UserData.profile.sliceTimerEnd = 0;
 
@@ -84,7 +112,7 @@ public class EventHandler {
             Recordings.playedRecordings.clear();
         }
 
-//        LOGGER.info("\"" + messageContent + "\"");
+        LOGGER.info("\"" + messageContent + "\"");
 
         if(messageContent.equals("You have listed an item on the auction house!") && lastAHSellItem != null && lastAHSellPrice != null && mc.player != null) {
             StringTextComponent text = new StringTextComponent(String.format("\u00A7eYou have listed %sx \"\u00A76%s\u00A7e\" for \u00A76$%s\u00A7e on the auction house!", lastAHSellItem.getCount(), lastAHSellItem.getDisplayName().getString(), lastAHSellPrice));
@@ -219,7 +247,7 @@ public class EventHandler {
     @SubscribeEvent
     public void onGuiOpen(GuiOpenEvent event) {
 //        if(event.getGui() == null) InventoryManagement.tickQueue.clear();
-        if(event.getGui() != null) Recordings.resetPlayerActions(false);
+        Recordings.resetPlayerActions(false);
         SnapCraftUtils.updateLastAccessedPV(event.getGui());
     }
 
@@ -285,6 +313,7 @@ public class EventHandler {
                 mc.fontRenderer.drawString(matrix, "Cancel input until: " + (int)(cancelInputUntil - System.currentTimeMillis()), 0, 60, 0);
                 mc.fontRenderer.drawString(matrix, "Full Slots: " + InventoryManagement.getFilledSlotCount(), 0, 70, 0);
                 mc.fontRenderer.drawString(matrix, "Closest Player: " + Recordings.closestPlayerDistance(), 0, 80, 0);
+                mc.fontRenderer.drawString(matrix, "Socket Connected: " + WebSocketHandler.connected, 0, 90, 0);
                 //                ArrayList<SnapCraftUtils.Coordinates> emptyBLocks = SnapCraftUtils.getEmptyMineBlocks();
 //                mc.fontRenderer.drawString(matrix, String.format("Mine percent empty: %s, percent similar: %s", emptyBLocks != null ? (int) ((double) emptyBLocks.size() / (72 * 49 * 49) * 100) : null, Recordings.playingRecording != null ? SnapCraftUtils.percentMinesEqual(emptyBLocks, Recordings.playingRecording.ticks.get(0).emptyMineBlocks) : null), 0 , 50, 0);
                 GuiOverlay.renderSliceTimer(matrix);
@@ -321,20 +350,6 @@ public class EventHandler {
         mc.gameSettings.heldItemTooltips = false;
     }
 
-//    @SubscribeEvent
-//    public void playerLoad(PlayerEvent.PlayerLoggedInEvent event) {
-//        IsadoreMod.lastPlayerID = event.getPlayer().getUniqueID().toString();
-//        IsadoreMod.lastPlayerName = event.getPlayer().getName().getString();
-//        LayoutHandler.refreshLayouts();
-//    }
-//
-//    @SubscribeEvent
-//    public void playerLogIn(ClientPlayerNetworkEvent.LoggedInEvent event) {
-//        IsadoreMod.lastPlayerID = event.getPlayer().getUniqueID().toString();
-//        IsadoreMod.lastPlayerName = event.getPlayer().getName().getString();
-//        LayoutHandler.refreshLayouts();
-//    }
-
     @SubscribeEvent
     public void onMessageSent(ClientChatEvent event) {
         String msg = event.getMessage().toLowerCase(Locale.ROOT);
@@ -348,8 +363,7 @@ public class EventHandler {
         if(IsadoreMod.disabled) return;
         if(msg.startsWith("/rec")) {
             if(msg.contains("play")) {
-                Recordings.playRecordings = !Recordings.playRecordings;
-                Recordings.playedTicks = 0;
+                KeyBinds.toggleRecordingPlay();
             } else if(msg.contains("reset")) {
                 Recordings.resetRecording();
             } else if(msg.contains("delete")) {
@@ -378,6 +392,7 @@ public class EventHandler {
 
     @SubscribeEvent
     public void onLogin(ClientPlayerNetworkEvent.LoggedInEvent event) {
+        WebSocketHandler.init();
         NetworkManager manager = event.getNetworkManager();
         if(manager != null && !loggedIn)  {
             manager.channel().pipeline().addBefore("packet_handler", "listener", new PacketHandler());
@@ -392,6 +407,7 @@ public class EventHandler {
 
     @SubscribeEvent
     public void onLogout(ClientPlayerNetworkEvent.LoggedOutEvent event) {
+        WebSocketHandler.disconnect();
         loggedIn = false;
     }
 

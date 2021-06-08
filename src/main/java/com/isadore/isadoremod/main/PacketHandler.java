@@ -12,12 +12,14 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.network.IPacket;
 import net.minecraft.network.play.client.CClickWindowPacket;
 import net.minecraft.network.play.client.CPlayerTryUseItemPacket;
+import net.minecraft.network.play.server.SChatPacket;
 import net.minecraft.network.play.server.SEntityEquipmentPacket;
 import net.minecraft.network.play.server.SSetSlotPacket;
 import net.minecraft.network.play.server.SWindowItemsPacket;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;

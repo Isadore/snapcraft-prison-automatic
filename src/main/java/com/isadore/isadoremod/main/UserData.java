@@ -33,6 +33,12 @@ public class UserData {
 
     public static class PlayerProfile {
         @Nullable
+        public String pwName = null;
+        @Nullable
+        public String[] nickNames = {};
+        @Nullable
+        public String webSocketToken = null;
+        @Nullable
         public String mine = null;
         public double sliceTimerEnd = 0;
         public double oreSeekTimerEnd = 0;

@@ -15,11 +15,14 @@ import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.scoreboard.*;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.text.ITextComponent;
+import net.minecraftforge.client.event.ClientChatEvent;
+import net.minecraftforge.common.MinecraftForge;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.Locale;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -158,8 +161,7 @@ public class SnapCraftUtils {
     @Nullable
     public static MineCoordinates getMineInfo() {
         String mine = getPlayerMine();
-        if(mine == null) mine = "";
-        switch (mine) {
+        switch (mine != null ? mine : "") {
             case "Prestige3":
                 return new MineCoordinates(new Point3D(3009, 71, 1476), 49, 66, new Point3D(3000.500, 72.0, 1500.500));
             case "Prestige2":
@@ -174,8 +176,7 @@ public class SnapCraftUtils {
 
     public static String getPrismarineType() {
         String mine = getPlayerMine();
-        if(mine == null) mine = "";
-        switch (mine) {
+        switch (mine != null ? mine : "") {
             case "Prestige3":
                 return "minecraft:dark_prismarine";
             case "Prestige2":
@@ -282,7 +283,8 @@ public class SnapCraftUtils {
                 EventHandler.tickQueue.add(() -> {
                     if(mc.currentScreen != null) {
 //                        mc.currentScreen.sendMessage(command);
-                        mc.player.sendChatMessage(command);
+                        if(!MinecraftForge.EVENT_BUS.post(new ClientChatEvent(command)))
+                            mc.player.sendChatMessage(command);
                         try {
                             mc.currentScreen.closeScreen();
                         } catch (Exception ex) {
@@ -291,7 +293,8 @@ public class SnapCraftUtils {
                     }
                 });
             } else {
-                mc.player.sendChatMessage(command);
+                if(!MinecraftForge.EVENT_BUS.post(new ClientChatEvent(command)))
+                    mc.player.sendChatMessage(command);
             }
 //            mc.ingameGUI.getChatGUI().addToSentMessages(command);
             lastCommandSentTimestamp = System.currentTimeMillis();
@@ -301,7 +304,7 @@ public class SnapCraftUtils {
 
     public static class CustomChatScreen extends ChatScreen {
 
-        public String defaultText = "";
+        public String defaultText;
 
         public CustomChatScreen(String defaultText) {
             super(defaultText);
@@ -326,12 +329,71 @@ public class SnapCraftUtils {
         return System.currentTimeMillis() + exponentialRandomInt(power, msMin, msMax);
     }
 
+    public static double exponentialRandomTime(int power, double sMin, double sMax) {
+        return exponentialRandomTime(power, (int) (sMin * 60 * 1000), (int) (sMax * 60 * 1000));
+    }
+
     public static double squaredRandomTime(int msMin, int msMax) {
         return exponentialRandomTime(2, msMin, msMax);
     }
 
+    public static double squaredRandomTime(double sMin, double sMax) {
+        return squaredRandomTime((int) (sMin * 60 * 1000), (int) (sMax * 60 * 1000));
+    }
+
     public static int exponentialRandomInt(int power, int min, int max) {
         return max - (int) (Math.pow(new Random().nextDouble(), power) * (max - min));
+    }
+
+    public static boolean messageHasNicknameMatch(String msg) {
+        String[] splitMsg = msg.split("\\u00BB");
+        String lowercased = msg.toLowerCase(Locale.ROOT);
+        if(splitMsg.length == 2) {
+            lowercased = splitMsg[1].toLowerCase(Locale.ROOT);
+        }
+        if(lowercased.contains(mc.session.getUsername().toLowerCase(Locale.ROOT)))
+            return true;
+        if(UserData.profile.nickNames != null) {
+            for (String s : UserData.profile.nickNames) {
+                if(lowercased.contains(s.toLowerCase(Locale.ROOT))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public static String[] blacklist = {
+            "[Warning] Ground items will be removed in",
+            "+5 tokens for mining 250 blocks! (Use tokens to /enchant)",
+            "Your inventory is full!",
+            "You have received 5 tokens.",
+            "A ghost with tokens! Kill it to receive 10 Enchant Tokens!",
+            "-------------------------------------------",
+            "A ghost with a repair token! Kill it to receive a Repair Token",
+            "The stone is alive! Kill it to receive",
+            "--------------- Announcement ---------------",
+            "================================================",
+            "http://snapcraft.net/vote",
+            "Click the following link to start voting:",
+            "Top 5 voters receive $20 Webshop vouchers",
+            "You have not voted today! Vote for daily rewards in every server!",
+            "Received:",
+            "Amount Sold:",
+            "Multiplier:",
+            "**STRUCK WITH GREAT FORCE**",
+            "Knowing"
+    };
+
+    public static boolean messageIsBlackListed(String msg) {
+        String lowercased = msg.toLowerCase(Locale.ROOT);
+        // Heart unicode
+        if(msg.contains(Character.toString((char) 0x2764))) return true;
+        for (String s : blacklist) {
+            if(lowercased.startsWith(s.toLowerCase(Locale.ROOT)))
+                return true;
+        }
+        return false;
     }
 
 }

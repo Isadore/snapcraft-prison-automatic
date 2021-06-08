@@ -5,6 +5,7 @@ import com.isadore.isadoremod.components.KeyBinds;
 import com.isadore.isadoremod.components.LayoutHandler;
 import com.isadore.isadoremod.main.EventHandler;
 import com.isadore.isadoremod.main.UserData;
+import com.isadore.isadoremod.main.WebSocketHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
