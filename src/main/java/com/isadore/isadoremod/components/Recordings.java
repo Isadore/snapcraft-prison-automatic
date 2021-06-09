@@ -5,17 +5,19 @@ import com.isadore.isadoremod.main.EventHandler;
 import com.isadore.isadoremod.main.GuiOverlay;
 import com.isadore.isadoremod.main.UserData;
 import com.isadore.isadoremod.main.WebSocketHandler;
+import net.minecraft.block.Blocks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.AbstractClientPlayerEntity;
 import net.minecraft.client.gui.screen.inventory.ChestScreen;
 import net.minecraft.inventory.container.ClickType;
 import net.minecraft.inventory.container.Slot;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.math.BlockRayTraceResult;
+import net.minecraft.util.math.RayTraceResult;
 import net.minecraftforge.event.TickEvent;
 
 import javax.annotation.Nullable;
 import java.sql.Timestamp;
-import java.text.SimpleDateFormat;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -79,6 +81,7 @@ public class Recordings {
     public static int gpickRepDurability = SnapCraftUtils.exponentialRandomInt(2, 375, 575);
     public static boolean storeCurrentSlice = false;
     public static ArrayList<Long> playedRecordings = new ArrayList<>();
+    public static int ticksMiningNothing = 0;
 
     public static void playTicks(TickEvent event) {
         if(mc.player == null) return;
@@ -86,7 +89,7 @@ public class Recordings {
             if((playingRecording == null || playedTicks >= playingRecording.ticks.size() - 1) && playRecordings && event.phase == TickEvent.Phase.END) {
                 resetRecording();
                 playedTicks = 0;
-            } else if(!EventHandler.playerInHub && WebSocketHandler.connected && playingRecording != null && continuePlayingTimeStamp <= System.currentTimeMillis() && playRecordings && !recordActions && playedTicks < playingRecording.ticks.size() && mc.currentScreen == null && EventHandler.tickQueue.size() == 0) {
+            } else if(!EventHandler.playerInHub && WebSocketHandler.connected && playingRecording != null && continuePlayingTimeStamp <= System.currentTimeMillis() && playRecordings && !recordActions && playedTicks < playingRecording.ticks.size() && mc.currentScreen == null && EventHandler.tickQueue.size() == 0 && mc.world != null) {
                 UserData.RecordingType currentType = getCurrentPickType();
 
                 int rand1 = new Random().nextInt(40 * 60 * 60);
@@ -100,7 +103,10 @@ public class Recordings {
                     String time = ZonedDateTime.ofInstant(new Timestamp((long) sleepTime).toInstant(), ZoneId.of("America/New_York")).format(DateTimeFormatter.ofPattern("hh:mm:ss a"));
                     WebSocketHandler.sendMessage(WebSocketHandler.MessageType.AutoMinerStatus, String.format("Sleeping until %s", time));
                     continuePlayingTimeStamp = sleepTime;
+                    EventHandler.tickQueue.add(new EventHandler.QueueDelay(500, 2123));
+                    EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + playerMineNotNull()));
                     resetPlayerActions();
+                    sellBlocks();
                     return;
                 }
 
@@ -292,7 +298,15 @@ public class Recordings {
                 if(tick.phase == event.phase) {
                     mc.player.rotationPitch = (float) tick.cameraPitch;
                     mc.player.rotationYaw = (float) tick.cameraYaw;
-                    mc.gameSettings.keyBindAttack.setPressed(tick.attackKeybindPressed);
+                    if(tick.attackKeybindPressed) {
+                        mc.sendClickBlockToController(true);
+                        if(mc.objectMouseOver == null || mc.objectMouseOver.getType() != RayTraceResult.Type.BLOCK || mc.world.getBlockState(((BlockRayTraceResult) mc.objectMouseOver).getPos()).getBlock() == Blocks.BEDROCK) {
+                            ticksMiningNothing++;
+                        } else {
+                            ticksMiningNothing = 0;
+                        }
+                    }
+//                    mc.gameSettings.keyBindAttack.setPressed(tick.attackKeybindPressed);
                     mc.gameSettings.keyBindForward.setPressed(tick.forwardsKeybindPressed);
                     mc.gameSettings.keyBindRight.setPressed(tick.rightKeybindPressed);
                     mc.gameSettings.keyBindLeft.setPressed(tick.leftKeybindPressed);
@@ -303,13 +317,7 @@ public class Recordings {
                     mc.player.setSneaking(tick.sneaking);
                     mc.player.abilities.isFlying = tick.flying;
                     playedTicks++;
-                    if(mc.player.inventory.getFirstEmptyStack() == -1 && (GuiOverlay.diamondPercentFull == 1 || GuiOverlay.emeraldPercentFull == 1 || GuiOverlay.prismarinePercentFull == 1)) {
-                        resetRecording();
-                        resetPlayerActions();
-                        EventHandler.tickQueue.add(new EventHandler.QueueDelay(400, 2123));
-                        EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + playerMineNotNull()));
-                        sellBlocks();
-                    } else if (playedTicks >= playingRecording.ticks.size() - 1) {
+                    if(ticksMiningNothing > 70 || (playedTicks >= playingRecording.ticks.size() - 1) || (mc.player.inventory.getFirstEmptyStack() == -1 && (GuiOverlay.diamondPercentFull == 1 || GuiOverlay.emeraldPercentFull == 1 || GuiOverlay.prismarinePercentFull == 1))) {
                         resetRecording();
                         resetPlayerActions();
                         EventHandler.tickQueue.add(new EventHandler.QueueDelay(400, 2123));
@@ -326,6 +334,7 @@ public class Recordings {
 
     public static void resetRecording() {
         if(gettingRecording == null || !gettingRecording.isAlive()) {
+            ticksMiningNothing = 0;
             playingRecording = null;
             UserData.RecordingType type = UserData.profile.sliceTimerEnd < System.currentTimeMillis() ? UserData.RecordingType.SLICE : UserData.RecordingType.GPICK;
             gettingRecording = new Thread(() -> {
@@ -350,6 +359,7 @@ public class Recordings {
             mc.player.setSprinting(false);
             mc.player.setSneaking(false);
             if(disableFly) mc.player.abilities.isFlying = false;
+            if(mc.player.isOnLadder()) mc.player.setSneaking(true);
         }
     }
 
