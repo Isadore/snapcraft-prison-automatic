@@ -75,6 +75,7 @@ public class WebSocketHandler extends WebSocketClient {
     public void onClose(int code, String reason, boolean remote) {
         connected = false;
         IsadoreMod.LOGGER.info("Websocket closed with exit code " + code + " additional info: " + reason);
+        Recordings.resetPlayerActions(false);
         if(!localClose) init();
         localClose = false;
     }
