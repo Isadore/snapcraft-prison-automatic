@@ -1,6 +1,5 @@
 package com.isadore.isadoremod.main;
 
-import com.google.gson.Gson;
 import com.isadore.isadoremod.*;
 import com.isadore.isadoremod.components.*;
 import com.mojang.blaze3d.matrix.MatrixStack;
@@ -27,7 +26,6 @@ import java.text.NumberFormat;
 import java.util.LinkedList;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 
 public class EventHandler {
 
@@ -117,6 +115,39 @@ public class EventHandler {
         if(messageContent.equals("You have listed an item on the auction house!") && lastAHSellItem != null && lastAHSellPrice != null && mc.player != null) {
             StringTextComponent text = new StringTextComponent(String.format("\u00A7eYou have listed %sx \"\u00A76%s\u00A7e\" for \u00A76$%s\u00A7e on the auction house!", lastAHSellItem.getCount(), lastAHSellItem.getDisplayName().getString(), lastAHSellPrice));
             event.setMessage(text);
+        }
+
+        if(messageContent.equals("Your warp with ID 6 has expired.") && Recordings.playRecordings) {
+            tickQueue.add(Recordings::resetPlayerActions);
+            tickQueue.add(new QueueDelay(800, 2300));
+            tickQueue.add(() -> SnapCraftUtils.handleCommand("/home pw"));
+            tickQueue.add(new QueueDelay(800, 2300));
+            for (int i = 1; i <= 6; i++) {
+                tickQueue.add(new QueueDelay(200, 600));
+                tickQueue.add(() -> SnapCraftUtils.handleCommand("/pw set"));
+            }
+            if(UserData.profile.pwName != null && !UserData.profile.pwName.isEmpty()) {
+                tickQueue.add(new QueueDelay(500, 1300));
+                for (int i = 1; i <= 6; i++) {
+                    tickQueue.add(new QueueDelay(500, 1300));
+                    String cmd = "/pw name " + i + " " + UserData.profile.pwName;
+                    tickQueue.add(() -> SnapCraftUtils.handleCommand(cmd));
+                }
+            }
+            if(UserData.profile.pwItem != null && !UserData.profile.pwItem.isEmpty()) {
+                tickQueue.add(new QueueDelay(500, 1300));
+                if(UserData.profile.pwName != null) {
+                    for (int i = 1; i <= 6; i++) {
+                        tickQueue.add(new QueueDelay(500, 1300));
+                        String cmd = "/pw item " + i + " " + UserData.profile.pwItem;
+                        tickQueue.add(() -> SnapCraftUtils.handleCommand(cmd));
+                    }
+                }
+            }
+            tickQueue.add(new QueueDelay(700, 2300));
+            tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + Recordings.playerMineNotNull()));
+            tickQueue.add(new QueueDelay(1000, 2300));
+            tickQueue.add(Recordings::resetPlayerActions);
         }
 
     }
@@ -314,6 +345,7 @@ public class EventHandler {
                 mc.fontRenderer.drawString(matrix, "Full Slots: " + InventoryManagement.getFilledSlotCount(), 0, 70, 0);
                 mc.fontRenderer.drawString(matrix, "Closest Player: " + Recordings.closestPlayerDistance(), 0, 80, 0);
                 mc.fontRenderer.drawString(matrix, "Socket Connected: " + WebSocketHandler.connected, 0, 90, 0);
+                mc.fontRenderer.drawString(matrix, "Mining ticks missed: " + Recordings.ticksMiningNothing, 0, 100, 0);
                 //                ArrayList<SnapCraftUtils.Coordinates> emptyBLocks = SnapCraftUtils.getEmptyMineBlocks();
 //                mc.fontRenderer.drawString(matrix, String.format("Mine percent empty: %s, percent similar: %s", emptyBLocks != null ? (int) ((double) emptyBLocks.size() / (72 * 49 * 49) * 100) : null, Recordings.playingRecording != null ? SnapCraftUtils.percentMinesEqual(emptyBLocks, Recordings.playingRecording.ticks.get(0).emptyMineBlocks) : null), 0 , 50, 0);
                 GuiOverlay.renderSliceTimer(matrix);
@@ -352,7 +384,8 @@ public class EventHandler {
 
     @SubscribeEvent
     public void onMessageSent(ClientChatEvent event) {
-        String msg = event.getMessage().toLowerCase(Locale.ROOT);
+        String msg = event.getMessage();
+        String lowercased = event.getMessage().toLowerCase(Locale.ROOT);
         if(mc.player == null) return;
         if(msg.equals("/isadoremod")) {
             IsadoreMod.disabled = !IsadoreMod.disabled;
@@ -361,22 +394,33 @@ public class EventHandler {
 //            mc.player.sendMessage(new StringTextComponent(String.format("%sIsadoreMod %s", IsadoreMod.disabled ? "\u00A7c" : "\u00A7a", IsadoreMod.disabled ? "disabled" : "enabled")), null);
         }
         if(IsadoreMod.disabled) return;
-        if(msg.startsWith("/rec")) {
-            if(msg.contains("play")) {
+        if(lowercased.startsWith("/pwname")) {
+            String name = "";
+            if(msg.length() > 8) name = msg.substring(8).trim();
+            UserData.profile.pwName = name;
+            mc.player.sendMessage(new StringTextComponent(String.format("Pwarp name stored: %s", name.replace("&", "\u00A7"))), null);
+            event.setCanceled(true);
+        } else if(lowercased.startsWith("/pwitem")) {
+            String item = "";
+            if(msg.length() > 8) item = msg.substring(8).trim();
+            UserData.profile.pwItem = item;
+            mc.player.sendMessage(new StringTextComponent(String.format("Pwarp item stored: %s", item)), null);
+            event.setCanceled(true);
+        } else if(lowercased.startsWith("/rec")) {
+            if(lowercased.contains("play")) {
                 KeyBinds.toggleRecordingPlay();
-            } else if(msg.contains("reset")) {
+            } else if(lowercased.contains("reset")) {
                 Recordings.resetRecording();
-            } else if(msg.contains("delete")) {
+            } else if(lowercased.contains("delete")) {
                 if(Recordings.playingRecording != null)
                     UserData.deleteRecording(Recordings.playingRecording.timestamp);
             } else  {
                 Recordings.recordActions = !Recordings.recordActions;
             }
             event.setCanceled(true);
-        }
-        if(msg.startsWith("/ah sell ")) {
+        } else if(lowercased.startsWith("/ah sell ")) {
             try {
-                int price = Integer.parseInt(msg.replace("/ah sell ", ""));
+                int price = Integer.parseInt(msg.substring(9));
                 NumberFormat format = NumberFormat.getInstance();
                 format.setGroupingUsed(true);
                 lastAHSellPrice = format.format(price);
