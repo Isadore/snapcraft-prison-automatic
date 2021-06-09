@@ -382,7 +382,9 @@ public class SnapCraftUtils {
             "Amount Sold:",
             "Multiplier:",
             "**STRUCK WITH GREAT FORCE**",
-            "Knowing"
+            "Knowing",
+            "You don't have permission to break this sign.",
+            "Have an admin set the flag: use/break"
     };
 
     public static boolean messageIsBlackListed(String msg) {
