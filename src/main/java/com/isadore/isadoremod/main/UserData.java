@@ -33,6 +33,8 @@ public class UserData {
 
     public static class PlayerProfile {
         @Nullable
+        public String pwItem = null;
+        @Nullable
         public String pwName = null;
         @Nullable
         public String[] nickNames = {};
