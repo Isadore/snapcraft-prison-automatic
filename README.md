@@ -24,3 +24,4 @@
 - Custom API https://isadore.co
 - Custom websockets https://isadore.co
 - Custom pixel graphics
+- Individual user keys for API/WS security
