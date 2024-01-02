@@ -13,5 +13,14 @@
 - Websocket connection to discord bot to allow remote control from any device
 - Show and hide custom features for screen recording
 
-### Preview Video
+### Preview of Automated Gameplay
 [![Main Preview](http://img.youtube.com/vi/XdQ_zjCe4Z4/0.jpg)](https://youtu.be/XdQ_zjCe4Z4)
+
+
+### Technologies Used
+- Java + Typescript for external API/WS connection
+- Minecraft Forge API
+- Discord API
+- Custom API https://isadore.co
+- Custom websockets https://isadore.co
+- Custom pixel graphics
