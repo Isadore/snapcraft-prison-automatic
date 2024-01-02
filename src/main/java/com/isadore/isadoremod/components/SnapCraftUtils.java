@@ -1,6 +1,5 @@
 package com.isadore.isadoremod.components;
 
-import com.isadore.isadoremod.IsadoreMod;
 import com.isadore.isadoremod.main.EventHandler;
 import com.isadore.isadoremod.main.UserData;
 import javafx.geometry.Point3D;
@@ -12,10 +11,15 @@ import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.inventory.ChestScreen;
 import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.item.Item;
+import net.minecraft.item.Items;
 import net.minecraft.scoreboard.*;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.text.ChatType;
 import net.minecraft.util.text.ITextComponent;
+import net.minecraft.util.text.StringTextComponent;
 import net.minecraftforge.client.event.ClientChatEvent;
+import net.minecraftforge.client.event.ClientChatReceivedEvent;
 import net.minecraftforge.common.MinecraftForge;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -115,7 +119,7 @@ public class SnapCraftUtils {
         if(mc.player != null && maxPV != null && PVNum > 0 && PVNum <= maxPV) {
             if(currentPV != null && currentPV == PVNum) return;
             if(currentPV != null) mc.player.closeScreen();
-            handleCommand("/pv " + PVNum, IsadoreMod.playerIsIsadore());
+            handleCommand("/pv " + PVNum, true);
         }
     }
 
@@ -165,24 +169,23 @@ public class SnapCraftUtils {
             case "Prestige3":
                 return new MineCoordinates(new Point3D(3009, 71, 1476), 49, 66, new Point3D(3000.500, 72.0, 1500.500));
             case "Prestige2":
-                return new MineCoordinates(new Point3D(2525, 70, 1476), 49, 66, new Point3D(2500.500, 72.0, 1500.500));
+                return new MineCoordinates(new Point3D(2525, 70, 1476), 49, 66, new Point3D(2517.500, 72.0, 1500.500));
             case "Prestige1":
                 return new MineCoordinates(new Point3D(2007, 71, 1476), 49, 66, new Point3D(2000.500, 72.0, 1500.500));
             default:
                 return null;
         }
-
     }
 
-    public static String getPrismarineType() {
+    public static Item getPrismarineType() {
         String mine = getPlayerMine();
         switch (mine != null ? mine : "") {
             case "Prestige3":
-                return "minecraft:dark_prismarine";
+                return Items.DARK_PRISMARINE;
             case "Prestige2":
-                return "minecraft:prismarine_bricks";
+                return Items.PRISMARINE_BRICKS;
             default:
-                return "minecraft:prismarine";
+                return Items.PRISMARINE;
         }
     }
 
@@ -345,7 +348,15 @@ public class SnapCraftUtils {
         return max - (int) (Math.pow(new Random().nextDouble(), power) * (max - min));
     }
 
+    public static String[] mentionBlacklist = {
+            "Set fly mode",
+            "God mode"
+    };
+
     public static boolean messageHasNicknameMatch(String msg) {
+        for (String s : mentionBlacklist) {
+            if(msg.startsWith(s)) return false;
+        }
         String[] splitMsg = msg.split("\\u00BB");
         String lowercased = msg.toLowerCase(Locale.ROOT);
         if(splitMsg.length == 2) {
@@ -354,9 +365,11 @@ public class SnapCraftUtils {
         if(lowercased.contains(mc.session.getUsername().toLowerCase(Locale.ROOT)))
             return true;
         if(UserData.profile.nickNames != null) {
-            for (String s : UserData.profile.nickNames) {
-                if(lowercased.contains(s.toLowerCase(Locale.ROOT))) {
-                    return true;
+            for (String s : lowercased.split(" ")) {
+                for (String s1 : UserData.profile.nickNames) {
+                    if(s.startsWith(s1.toLowerCase(Locale.ROOT))) {
+                        return true;
+                    }
                 }
             }
         }
@@ -384,7 +397,14 @@ public class SnapCraftUtils {
             "**STRUCK WITH GREAT FORCE**",
             "Knowing",
             "You don't have permission to break this sign.",
-            "Have an admin set the flag: use/break"
+            "Have an admin set the flag: use/break",
+            "CRITICAL HIT!",
+            "Shiny (lv3): Something shiny just dropped on the floor!",
+            "The enchanting gods bless you with 10 Enchant Tokens!",
+            "You have received 10 tokens.",
+            "The stone crumbles to dust and you're left with a",
+            "Whilst mining you somehow received a Repair Token",
+            "You have added 10 tokens to"
     };
 
     public static boolean messageIsBlackListed(String msg) {
@@ -396,6 +416,13 @@ public class SnapCraftUtils {
                 return true;
         }
         return false;
+    }
+
+    public static void sendClientMessage(String msg) {
+        StringTextComponent textComponent = new StringTextComponent(msg);
+        ClientChatReceivedEvent event = new ClientChatReceivedEvent(ChatType.CHAT, textComponent, null);
+        if(!MinecraftForge.EVENT_BUS.post(event))
+            mc.ingameGUI.getChatGUI().printChatMessage(textComponent);
     }
 
 }

@@ -22,7 +22,6 @@ public class KeyBinds {
     public static KeyBinding resetSliceTimer = new KeyBinding("Reset slice timer", -1, IsadoreMod.MODID);
     public static KeyBinding warpToMine = new KeyBinding("Warp to mine", -1, IsadoreMod.MODID);
     public static KeyBinding sellAll = new KeyBinding("Sell all", -1, IsadoreMod.MODID);
-    public static KeyBinding holdleftClick = new KeyBinding("Hold left click", -1, IsadoreMod.MODID);
     public static KeyBinding recordingPlayToggle = new KeyBinding("Play/Pause recording", -1, IsadoreMod.MODID);
     public static KeyBinding[] allKeyBinds = { recordingPlayToggle, sellAll, organizeInventory, transferAllOfStack, openPlayerVault, resetSliceTimer, warpToMine };
 
@@ -35,10 +34,6 @@ public class KeyBinds {
     public static void openPV() {
         if(InventoryManagement.isScreenOpen()) return;
         SnapCraftUtils.openPV(SnapCraftUtils.lastPVAccessed);
-    }
-
-    public static void holdLeftClick() {
-        mc.gameSettings.keyBindAttack.setPressed(!mc.gameSettings.keyBindAttack.isKeyDown());
     }
 
     public static void resetTimer() {
@@ -60,32 +55,12 @@ public class KeyBinds {
 
     public static void toggleRecordingPlay() {
         Recordings.playRecordings = !Recordings.playRecordings;
-        Recordings.resetPlayerActions();
-    }
-
-    public static boolean isKeyDown(KeyBinding keyBind, boolean checkScreen)
-    {
-        if (keyBind.isInvalid())
-            return false;
-
-        if(mc.currentScreen != null && checkScreen)
-            return false;
-
-        boolean isDown = false;
-        switch (keyBind.getKey().getType())
-        {
-            case KEYSYM:
-                isDown = InputMappings.isKeyDown(mc.getMainWindow().getHandle(), keyBind.getKey().getKeyCode());
-                break;
-            case MOUSE:
-                isDown = GLFW.glfwGetMouseButton(mc.getMainWindow().getHandle(), keyBind.getKey().getKeyCode()) == GLFW.GLFW_PRESS;
-                break;
+        Recordings.stopAfterCurrentRec = false;
+        if(mc.player != null) {
+            String msg = (Recordings.playRecordings ? "Playing" : "Paused") + " recording.";
+            SnapCraftUtils.sendClientMessage(msg);
         }
-        return isDown && keyBind.getKeyConflictContext().isActive() && keyBind.getKeyModifier().isActive(keyBind.getKeyConflictContext());
-    }
-
-    public static boolean isKeyDown(KeyBinding keyBind) {
-        return isKeyDown(keyBind, true);
+        Recordings.resetPlayerActions();
     }
 
 }

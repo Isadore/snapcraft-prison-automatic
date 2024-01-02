@@ -7,6 +7,7 @@ import com.isadore.isadoremod.main.UserData;
 import com.mojang.serialization.Dynamic;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screen.HopperScreen;
 import net.minecraft.client.gui.screen.inventory.ChestScreen;
 import net.minecraft.client.gui.screen.inventory.ContainerScreen;
 import net.minecraft.client.gui.screen.inventory.InventoryScreen;
@@ -14,6 +15,7 @@ import net.minecraft.client.gui.widget.Widget;
 import net.minecraft.inventory.container.*;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.nbt.CompoundNBT;
 import net.minecraft.nbt.INBT;
 import net.minecraft.nbt.ListNBT;
@@ -115,7 +117,6 @@ public class InventoryManagement {
 
                             ArrayList<Slot> draggableSlots = getDraggableSlots(usableChestStack, currentSlots, savedSlots);
 
-
                             if(draggableSlots.size() > 1) {
 
                                 EventHandler.tickQueue.add(new MouseAction(-999, 4, ClickType.QUICK_CRAFT));
@@ -129,7 +130,7 @@ public class InventoryManagement {
                                     EventHandler.tickQueue.add(new MouseAction(usableChestSlot.slotNumber, 0, ClickType.PICKUP));
                                 }
 
-                            } else if(draggableSlots.size() == 1 && itemIDsEqual(storedStack, new String[]{"minecraft:diamond_block", "minecraft:prismarine", "minecraft:emerald_block", "minecraft:prismarine_bricks"})) {
+                            } else if(draggableSlots.size() == 1 && itemsEqual(storedStack, Items.DIAMOND_BLOCK, Items.EMERALD_BLOCK, SnapCraftUtils.getPrismarineType())) {
                                 EventHandler.tickQueue.add(new MouseAction(currentSlot.slotNumber, 1, ClickType.PICKUP));
                                 if(usableChestStack.getCount() > 1)
                                     EventHandler.tickQueue.add(new MouseAction(usableChestSlot.slotNumber, 0, ClickType.PICKUP));
@@ -170,12 +171,12 @@ public class InventoryManagement {
         return finalSlots;
     }
 
-    public static void shiftDoubleClickSlot(int slotID) {
+    public static void shiftDoubleClickSlot() {
         if(isScreenOpen()) {
             Integer windowID = getWindowID();
             ContainerScreen screen = (ContainerScreen) mc.currentScreen;
-            Slot slot = screen.getContainer().getSlot(slotID);
-            if(windowID != null) {
+            Slot slot = screen.getSlotUnderMouse();
+            if(windowID != null && slot != null) {
                 ItemStack currentStack = slot.getStack().copy();
                 List<Slot> allSlots = getALlSlots();
                 if(allSlots != null && mc.player != null) {
@@ -187,9 +188,9 @@ public class InventoryManagement {
                     if(spacesToMove == 1) {
                         EventHandler.tickQueue.add(new MouseAction(slot.slotNumber, 0, ClickType.QUICK_MOVE));
                     } else if(spacesToMove > 1) {
-                        if(itemIDsEqual(mc.player.inventory.getItemStack(), "minecraft:air"))
+                        if(mc.player.inventory.getItemStack().getItem() == Items.AIR)
                             EventHandler.tickQueue.add(new MouseAction(slot.slotNumber, 0, ClickType.PICKUP));
-                            EventHandler.tickQueue.add(() -> {
+                        EventHandler.tickQueue.add(() -> {
                                 for(Slot s : allSlots) {
                                     if (s != null && s.canTakeStack(mc.player) && s.getHasStack() && s.isSameInventory(slot) && Container.canAddItemToSlot(s, currentStack, true)) {
                                         new MouseAction(s.slotNumber, 0, ClickType.QUICK_MOVE).run();
@@ -205,27 +206,12 @@ public class InventoryManagement {
         }
     }
 
-    public static void shiftDoubleClickSlot() {
-        if(isScreenOpen()) {
-            ContainerScreen screen = (ContainerScreen) mc.currentScreen;
-            Slot currentSlot = screen.getSlotUnderMouse();
-            if(currentSlot != null) {
-                shiftDoubleClickSlot(currentSlot.slotNumber);
-            }
-        }
-    }
-
     @Nullable
     public static Integer getWindowID() {
-        Integer windowID = null;
         if(isScreenOpen()) {
-            if(mc.currentScreen instanceof InventoryScreen) {
-                windowID = ((InventoryScreen) mc.currentScreen).getContainer().windowId;
-            } else if(mc.currentScreen instanceof ChestScreen) {
-                windowID = ((ChestScreen) mc.currentScreen).getContainer().windowId;
-            }
+            return ((ContainerScreen) mc.currentScreen).getContainer().windowId;
         }
-        return windowID;
+        return null;
     }
 
     @Nullable
@@ -237,7 +223,6 @@ public class InventoryManagement {
                 if (itemsEqual(s.getStack(), stack)) {
                     if(finalSlot == null) finalSlot = s;
                     if(s.getStack().getCount() > finalSlot.getStack().getCount()) finalSlot = s;
-
                 }
             }
         }
@@ -270,10 +255,10 @@ public class InventoryManagement {
     }
 
     @Nullable
-    public static ItemStack getItemStackInInventoryForId(String id) {
+    public static ItemStack getItemStackInInventory(Item item) {
         if(mc.player != null) {
             for (ItemStack i : mc.player.inventory.mainInventory) {
-                if(id.equals(getItemID(i))) return i;
+                if(i.getItem() == item) return i;
             }
         }
         return null;
@@ -307,27 +292,20 @@ public class InventoryManagement {
     }
 
     public static boolean itemsEqual(ItemStack x, ItemStack y) {
-        return (itemIDsEqual(x, y) && (itemEnchantsEqual(x, y) || itemNamesEqual(x, y)));
+        return (x.getItem() == y.getItem() && (itemEnchantsEqual(x, y) || itemNamesEqual(x, y)));
     }
 
     public static boolean itemNamesEqual(ItemStack x, ItemStack y) {
         return x.getDisplayName().getString().equals(y.getDisplayName().getString());
     }
 
-    public static boolean itemIDsEqual(ItemStack x, ItemStack y) {
-        String ItemIDy = getItemID(y);
-        String ItemIDx = getItemID(x);
-        return (ItemIDy != null && ItemIDy.equals(ItemIDx));
-    }
-
     public static boolean itemIDsEqual(ItemStack x, String y) {
         return y.equals(getItemID(x));
     }
 
-    public static boolean itemIDsEqual(ItemStack x, String[] y) {
-        String itemID = getItemID(x);
-        for (String s : y)
-            if(itemID != null && itemID.equals(s)) return true;
+    public static boolean itemsEqual(ItemStack x, Item... items) {
+        for (Item i : items)
+            if(x.getItem() == i) return true;
         return false;
     }
 
@@ -435,19 +413,16 @@ public class InventoryManagement {
         if(isScreenOpen() && mc.currentScreen instanceof ChestScreen) {
             ChestContainer chest = ((ChestScreen) mc.currentScreen).getContainer();
             int chestSize = chest.getLowerChestInventory().getSizeInventory();
-            return new ArrayList<>(chest.inventorySlots.subList(0, chestSize - 1));
+            return new ArrayList<>(chest.inventorySlots.subList(0, chestSize));
         }
         return null;
     }
 
     @Nullable
     public static List<Slot> getALlSlots() {
-        List<Slot> allSlots = null;
-        if(mc.currentScreen instanceof ChestScreen)
-            allSlots = ((ChestScreen) mc.currentScreen).getContainer().inventorySlots;
-        if(mc.currentScreen instanceof InventoryScreen)
-            allSlots = ((InventoryScreen) mc.currentScreen).getContainer().inventorySlots;
-        return allSlots;
+        if(mc.currentScreen instanceof ContainerScreen)
+            return ((ContainerScreen) mc.currentScreen).getContainer().inventorySlots;
+        return null;
     }
 
     public static boolean isScreenOpen() {

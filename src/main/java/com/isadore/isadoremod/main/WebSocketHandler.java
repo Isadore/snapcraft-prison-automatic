@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.isadore.isadoremod.IsadoreMod;
 import com.isadore.isadoremod.components.Recordings;
 import com.isadore.isadoremod.components.SnapCraftUtils;
+import net.minecraft.client.Minecraft;
 import org.java_websocket.client.WebSocketClient;
 import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.handshake.ServerHandshake;
@@ -19,9 +20,14 @@ public class WebSocketHandler extends WebSocketClient {
     public static boolean localClose = false;
     @Nullable
     public static WebSocketClient client = null;
+    public static Minecraft mc = Minecraft.getInstance();
+
+    public static String discordStatus = "offline";
+    public static double discordOnlineTimestamp = 0;
+    public static double lastMessageReceived = 0;
 
     public enum MessageType {
-        ChatMessage, DirectMessage, DiscordTyping, Mention, DiscordMessage, PING, AutoMinerStatus
+        ChatMessage, DirectMessage, DiscordTyping, Mention, DiscordMessage, PING, AutoMinerStatus, ScreenShot, DiscordStatusUpdate
     }
 
     public static class Message {
@@ -85,21 +91,32 @@ public class WebSocketHandler extends WebSocketClient {
         Message parsedMessage = new Gson().fromJson(message, Message.class);
         IsadoreMod.LOGGER.info("received message: " + parsedMessage.type + " - " + parsedMessage.content);
         if(parsedMessage.getType() == MessageType.DiscordMessage) {
-            if(Recordings.playRecordings) {
-                EventHandler.tickQueue.add(() -> Recordings.resetPlayerActions(false));
-                EventHandler.tickQueue.add(new EventHandler.QueueDelay(1200, 2300));
-            }
-            EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand(parsedMessage.content));
-            if(Recordings.playRecordings) {
+            if(mc.currentScreen instanceof SnapCraftUtils.CustomChatScreen) {
+                ((SnapCraftUtils.CustomChatScreen) mc.currentScreen).defaultText = parsedMessage.content;
                 EventHandler.tickQueue.add(new EventHandler.QueueDelay(500, 1000));
-            }
-        } else if(parsedMessage.getType() == MessageType.DiscordTyping) {
-            if(Boolean.parseBoolean(parsedMessage.content)) {
-                Recordings.playRecordings = false;
-                Recordings.resetPlayerActions(false);
+                EventHandler.tickQueue.add(() -> {
+                    if(mc.player != null)
+                        mc.player.sendChatMessage(parsedMessage.content);
+                    if(mc.currentScreen != null)
+                        mc.currentScreen.closeScreen();
+                });
             } else {
-                Recordings.playRecordings = true;
+                EventHandler.tickQueue.add(() -> Recordings.resetPlayerActions(false));
+                EventHandler.tickQueue.add(new EventHandler.QueueDelay(500, 1000 + (50 * parsedMessage.content.length())));
+                EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand(parsedMessage.content));
             }
+            lastMessageReceived = System.currentTimeMillis();
+        } else if(parsedMessage.getType() == MessageType.DiscordTyping) {
+            if(Boolean.parseBoolean(parsedMessage.content) && mc.currentScreen == null) {
+                mc.displayGuiScreen(new SnapCraftUtils.CustomChatScreen(""));
+            } else if(mc.currentScreen instanceof SnapCraftUtils.CustomChatScreen) {
+                mc.currentScreen.closeScreen();
+            }
+        } else if(parsedMessage.getType() == MessageType.DiscordStatusUpdate) {
+            if(parsedMessage.content.equals("online") || discordStatus.equals("online")) {
+                discordOnlineTimestamp = System.currentTimeMillis();
+            }
+            discordStatus = parsedMessage.content;
         }
     }
 

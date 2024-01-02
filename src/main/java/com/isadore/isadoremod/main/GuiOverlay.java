@@ -19,7 +19,9 @@ import net.minecraft.client.gui.widget.button.ImageButton;
 import net.minecraft.client.renderer.*;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.inventory.container.Slot;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
 import net.minecraft.util.ColorHelper;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.math.vector.Matrix4f;
@@ -28,7 +30,6 @@ import net.minecraft.util.text.ITextComponent;
 import net.minecraft.util.text.StringTextComponent;
 import net.minecraft.util.text.TextFormatting;
 import net.minecraftforge.client.event.GuiScreenEvent;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -53,7 +54,6 @@ public class GuiOverlay {
     public static double prismarinePercentFull = 0;
     public static double emeraldPercentFull = 0;
     public static double diamondPercentFull = 0;
-
 
     private static void renderBackgroundBar(MatrixStack matrix, int y) {
         int lightGrey = ColorHelper.PackedColor.packColor(255, 153,153,153);
@@ -120,11 +120,11 @@ public class GuiOverlay {
         for(ItemStack i : inventory) {
             String id = InventoryManagement.getItemID(i);
             if(id == null) return;
-            if(id.equals("minecraft:diamond_block"))
+            if(i.getItem() == Items.DIAMOND_BLOCK)
                 diamondStacks.add(i);
-            if(id.equals("minecraft:emerald_block"))
+            if(i.getItem() == Items.EMERALD_BLOCK)
                 emeraldStacks.add(i);
-            if(id.equals("minecraft:prismarine") || id.equals("minecraft:prismarine_bricks") || id.equals("minecraft:dark_prismarine"))
+            if(i.getItem() == SnapCraftUtils.getPrismarineType())
                 prismarineStacks.add(i);
         }
 //        double totalBlocks = allStacks.stream().mapToInt(ItemStack::getCount).sum();
@@ -162,17 +162,17 @@ public class GuiOverlay {
         if(mc.player.inventory.getFirstEmptyStack() == -1) {
             int percentColor = 0xffe100;
             if(diamondPercentFull > 0) {
-                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation("minecraft:diamond_block"))), (screenWidth() / 2) + 7, (screenHeight() / 2) - 25);
+                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(new ItemStack(Items.DIAMOND_BLOCK), (screenWidth() / 2) + 7, (screenHeight() / 2) - 25);
                 mc.fontRenderer.drawString(matrix, (int) (diamondPercentFull * 100) + "%", (screenWidth() / 2) + 24, (screenHeight() / 2) - 21, 0);
                 mc.fontRenderer.drawString(matrix, (int) (diamondPercentFull * 100) + "%", (screenWidth() / 2) + 25, (screenHeight() / 2) - 20, percentColor);
             }
             if(emeraldPercentFull > 0) {
-                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation("minecraft:emerald_block"))), (screenWidth() / 2) + 7, (screenHeight() / 2) - 7);
+                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(new ItemStack(Items.EMERALD_BLOCK), (screenWidth() / 2) + 7, (screenHeight() / 2) - 7);
                 mc.fontRenderer.drawString(matrix, (int) (emeraldPercentFull * 100) + "%", (screenWidth() / 2) + 24, (screenHeight() / 2) - 3, 0);
                 mc.fontRenderer.drawString(matrix, (int) (emeraldPercentFull * 100) + "%", (screenWidth() / 2) + 25, (screenHeight() / 2) - 2, percentColor);
             }
             if(prismarinePercentFull > 0) {
-                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(new ItemStack(ForgeRegistries.ITEMS.getValue(new ResourceLocation(SnapCraftUtils.getPrismarineType()))), (screenWidth() / 2) + 7, (screenHeight() / 2) + 11);
+                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(new ItemStack(SnapCraftUtils.getPrismarineType()), (screenWidth() / 2) + 7, (screenHeight() / 2) + 11);
                 mc.fontRenderer.drawString(matrix, (int) (prismarinePercentFull * 100) + "%", (screenWidth() / 2) + 24, (screenHeight() / 2) + 15, 0);
                 mc.fontRenderer.drawString(matrix, (int) (prismarinePercentFull * 100) + "%", (screenWidth() / 2) + 25, (screenHeight() / 2) + 16, percentColor);
             }
@@ -187,7 +187,7 @@ public class GuiOverlay {
         if(mc.playerController != null && mc.player != null && remainingHighlightTicks > 0) {
 
             ItemStack heldItem = mc.player.getHeldItemMainhand();
-            if(InventoryManagement.itemIDsEqual(heldItem, "minecraft:air")) return;
+            if(heldItem.getItem() == Items.AIR) return;
 
             IFormattableTextComponent iformattabletextcomponent = (new StringTextComponent("")).append(heldItem.getDisplayName()).mergeStyle(heldItem.getRarity().color);
             if(heldItem.isDamageable())
@@ -241,7 +241,7 @@ public class GuiOverlay {
                 int x = currentSlot.xPos;
                 int y = currentSlot.yPos;
 
-                mc.getItemRenderer().renderItemAndEffectIntoGuiWithoutEntity(storedStack, x, y);
+                itemRenderer.renderItemAndEffectIntoGuiWithoutEntity(storedStack, x, y);
 
                 BufferBuilder bufferbuilder = Tessellator.getInstance().getBuffer();
                 RenderSystem.enableBlend();
@@ -266,8 +266,16 @@ public class GuiOverlay {
 
     }
 
-    public static void fillZ(MatrixStack matrixStack, int x, int y, int max_x, int max_y, int z, int color) {
-
+    public static void renderSlotIDs(MatrixStack matrix) {
+        if(!UserData.profile.renderSlotIDs) return;
+        List<Slot> slots = InventoryManagement.getALlSlots();
+        if(slots == null) return;
+        matrix.push();
+        matrix.translate(0, 0, 500);
+        for (Slot s : slots) {
+            mc.fontRenderer.drawString(matrix, Integer.toString(s.slotNumber), s.xPos, s.yPos, 0);
+        }
+        matrix.pop();
     }
 
     public static void renderLayoutID(GuiScreenEvent.DrawScreenEvent event) {
@@ -363,7 +371,7 @@ public class GuiOverlay {
     }
 
     public static class IdentifiableButton extends ImageButton {
-        String ID = "";
+        String ID;
         public IdentifiableButton(String ID, int xIn, int yIn, int widthIn, int heightIn, int xTexStartIn, int yTexStartIn, int yDiffTextIn, ResourceLocation resourceLocationIn, Button.IPressable onPressIn) {
             super(xIn, yIn, widthIn, heightIn, xTexStartIn, yTexStartIn, yDiffTextIn, resourceLocationIn, onPressIn);
             this.ID = ID;

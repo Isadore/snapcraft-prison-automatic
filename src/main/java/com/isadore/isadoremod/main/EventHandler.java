@@ -1,5 +1,6 @@
 package com.isadore.isadoremod.main;
 
+import com.google.gson.Gson;
 import com.isadore.isadoremod.*;
 import com.isadore.isadoremod.components.*;
 import com.mojang.blaze3d.matrix.MatrixStack;
@@ -8,13 +9,17 @@ import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.screen.inventory.ChestScreen;
 import net.minecraft.client.gui.screen.inventory.InventoryScreen;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.NativeImage;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.MobEntity;
+import net.minecraft.inventory.container.ClickType;
 import net.minecraft.inventory.container.Slot;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.NetworkManager;
+import net.minecraft.util.ScreenShotHelper;
 import net.minecraft.util.text.*;
+import net.minecraft.util.text.event.HoverEvent;
 import net.minecraftforge.client.event.*;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.world.WorldEvent;
@@ -23,9 +28,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.text.NumberFormat;
-import java.util.LinkedList;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public class EventHandler {
 
@@ -42,6 +46,11 @@ public class EventHandler {
     public static String lastVillagerSaleCount = null;
 
     public static boolean playerInHub = true;
+    public static boolean flyIsEnabled = false;
+    public static boolean godIsEnabled = false;
+
+    public static double lastMessageSentTimestamp = 0;
+    public static double lastPingTimestamp = 0;
 
     public static class QueueDelay implements Runnable {
         public int min;
@@ -70,39 +79,76 @@ public class EventHandler {
     public void onMessage(ClientChatReceivedEvent event) {
         String messageContent = event.getMessage().getString().trim();
 
+        if(messageContent.startsWith("Connected to")) {
+            if(messageContent.endsWith("Prison")) {
+                playerInHub = false;
+                Integer rankPVCount = SnapCraftUtils.getRankPVCount();
+                if(rankPVCount != null && rankPVCount >= 5) {
+                    cancelInputUntil = SnapCraftUtils.squaredRandomTime(900, 2500);
+                    EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/fly"));
+                }
+            } else {
+                flyIsEnabled = false;
+                playerInHub = true;
+            }
+        }
+
         if(messageContent.startsWith("Received:"))
             lastVillagerSalePrice = messageContent;
         if(messageContent.startsWith("Amount Sold:"))
             lastVillagerSaleCount = messageContent;
 
-        if(messageContent.startsWith("Connected to Hub #"))
-            playerInHub = true;
+        String playerInfo = "";
+        String username = "";
+        String nickname = "";
+        String balance = "";
+        List<ITextComponent> siblings = event.getMessage().getSiblings();
+        if(siblings.size() == 5) {
+            ITextComponent playerInfoComponent = siblings.get(3);
+            HoverEvent hoverEvent = playerInfoComponent.getStyle().getHoverEvent();
+            if(hoverEvent != null) {
+                ITextComponent hoverText = hoverEvent.getParameter(HoverEvent.Action.SHOW_TEXT);
+                if(hoverText != null) {
+                    //[Player: Saashiimee, Nickname: oonice, Prison Rank: ✪✪, Balance: 6.62M]
+                    String[] splitText = hoverText.getString().split("\n");
+                    if(splitText.length == 4) {
+                        username = splitText[0].substring(8);
+                        nickname = splitText[1].substring(10);
+                        balance = splitText[3].substring(9);
+                        playerInfo = String.format("(%s$%s) ", !username.equals(nickname) ? username + ", " : "", balance);
+                    }
+                }
+            }
+        }
 
         if(!playerInHub && messageContent.length() > 0) {
             if(messageContent.startsWith("From")) {
+                lastPingTimestamp = System.currentTimeMillis();
                 WebSocketHandler.sendMessage(WebSocketHandler.MessageType.DirectMessage, messageContent);
-            } else if(SnapCraftUtils.messageHasNicknameMatch(messageContent) || messageContent.startsWith("Your friend")) {
+            } else if(SnapCraftUtils.messageHasNicknameMatch(messageContent) && !username.equals(mc.session.getUsername())) {
+                lastPingTimestamp = System.currentTimeMillis();
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.Mention, playerInfo + messageContent);
+            } else if(messageContent.startsWith("Your friend")) {
                 WebSocketHandler.sendMessage(WebSocketHandler.MessageType.Mention, messageContent);
             } else if(messageContent.startsWith("Multiplier:")) {
                 WebSocketHandler.sendMessage(WebSocketHandler.MessageType.ChatMessage, lastVillagerSaleCount + ", " + lastVillagerSalePrice);
             } else if(!SnapCraftUtils.messageIsBlackListed(messageContent)) {
-                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.ChatMessage, messageContent);
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.ChatMessage, playerInfo + messageContent);
             }
         }
 
-        if(IsadoreMod.disabled) return;
-
-        if(messageContent.equals("Connected to Prison")) {
-            playerInHub = false;
-            Integer rankPVCount = SnapCraftUtils.getRankPVCount();
-            if(rankPVCount != null && rankPVCount >= 5) {
-                cancelInputUntil = SnapCraftUtils.squaredRandomTime(900, 2500);
-                EventHandler.tickQueue.add(() -> SnapCraftUtils.handleCommand("/fly"));
-            }
-        }
-
-        if(messageContent.equals("Scheduled server restart in 1"))
+        if(messageContent.equals("Scheduled server restart in 1")) {
             UserData.profile.sliceTimerEnd = 0;
+            playerInHub = true;
+            flyIsEnabled = false;
+        }
+
+        if(messageContent.startsWith("Set fly mode")) {
+            flyIsEnabled = messageContent.contains("enabled");
+        }
+        if(messageContent.startsWith("God mode")) {
+            godIsEnabled = messageContent.contains("enabled");
+        }
 
         if(messageContent.equals(SnapCraftUtils.getPlayerMine() + " is resetting.")) {
             if(Recordings.recordingQueue.size() > 0 && !Recordings.recordingQueue.get(Recordings.recordingQueue.size() - 1).saving)
@@ -110,14 +156,16 @@ public class EventHandler {
             Recordings.playedRecordings.clear();
         }
 
-        LOGGER.info("\"" + messageContent + "\"");
+//        LOGGER.info("\"" + messageContent + "\"");
+
+        if(IsadoreMod.disabled) return;
 
         if(messageContent.equals("You have listed an item on the auction house!") && lastAHSellItem != null && lastAHSellPrice != null && mc.player != null) {
             StringTextComponent text = new StringTextComponent(String.format("\u00A7eYou have listed %sx \"\u00A76%s\u00A7e\" for \u00A76$%s\u00A7e on the auction house!", lastAHSellItem.getCount(), lastAHSellItem.getDisplayName().getString(), lastAHSellPrice));
             event.setMessage(text);
         }
 
-        if(messageContent.equals("Your warp with ID 6 has expired.") && Recordings.playRecordings) {
+        if(messageContent.equals("Your warp with ID 6 has expired.")) {
             tickQueue.add(Recordings::resetPlayerActions);
             tickQueue.add(new QueueDelay(800, 2300));
             tickQueue.add(() -> SnapCraftUtils.handleCommand("/home pw"));
@@ -144,8 +192,7 @@ public class EventHandler {
                     }
                 }
             }
-            tickQueue.add(new QueueDelay(700, 2300));
-            tickQueue.add(() -> SnapCraftUtils.handleCommand("/warp " + Recordings.playerMineNotNull()));
+            Recordings.warpToMine();
             tickQueue.add(new QueueDelay(1000, 2300));
             tickQueue.add(Recordings::resetPlayerActions);
         }
@@ -155,9 +202,7 @@ public class EventHandler {
     @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {
         GuiOverlay.computeStackPercents();
-        Recordings.recordTicks(event);
-        Recordings.playTicks(event);
-        if(event.phase == TickEvent.Phase.START || mc.player == null) return;
+        if(mc.player == null) return;
         if(!IsadoreMod.disabled) {
             ItemStack heldItem = mc.player.getHeldItemMainhand();
             if(heldItem.isDamageable() && mc.gameSettings.keyBindAttack.isKeyDown()) {
@@ -171,7 +216,10 @@ public class EventHandler {
                 }
             }
         }
-        if(mc.world == null || cancelInputUntil > System.currentTimeMillis()) return;
+        if(!mc.player.connection.doneLoadingTerrain) return;
+        Recordings.recordTicks(event);
+        Recordings.playTicks(event);
+        if(mc.world == null || cancelInputUntil > System.currentTimeMillis() || event.phase == TickEvent.Phase.START) return;
         long lastTick2 = executedTick;
         long currentTick = mc.world.getGameTime();
         if(lastTick2 > currentTick)
@@ -189,35 +237,31 @@ public class EventHandler {
     }
 
     @SubscribeEvent
-    public void onPress(InputEvent event) {
+    public void onPress(InputEvent.KeyInputEvent event) {
         if(IsadoreMod.disabled) return;
 
         if(event.isCancelable() && cancelInputUntil > System.currentTimeMillis())
             event.setCanceled(true);
 
-        if(KeyBinds.isKeyDown(KeyBinds.openPlayerVault))
-            KeyBinds.openPV();
+        if(mc.currentScreen == null) {
+            if(KeyBinds.openPlayerVault.isPressed())
+                KeyBinds.openPV();
+            if(KeyBinds.resetSliceTimer.isPressed())
+                KeyBinds.resetTimer();
+            if(KeyBinds.warpToMine.isPressed())
+                KeyBinds.warpToMine();
+            if(KeyBinds.organizeInventory.isPressed())
+                LayoutHandler.restoreLayout();
+            if(KeyBinds.sellAll.isPressed())
+                KeyBinds.sellAll(true);
+        }
 
-        if(KeyBinds.isKeyDown(KeyBinds.resetSliceTimer))
-            KeyBinds.resetTimer();
-
-        if(KeyBinds.isKeyDown(KeyBinds.warpToMine))
-            KeyBinds.warpToMine();
-
-        if(KeyBinds.isKeyDown(KeyBinds.organizeInventory, false))
-            LayoutHandler.restoreLayout();
-
-        if(KeyBinds.isKeyDown(KeyBinds.transferAllOfStack, false))
-            InventoryManagement.shiftDoubleClickSlot();
-
-        if(KeyBinds.isKeyDown(KeyBinds.holdleftClick))
-            KeyBinds.holdLeftClick();
-
-        if(KeyBinds.isKeyDown(KeyBinds.sellAll))
-            KeyBinds.sellAll(true);
-
-        if(KeyBinds.isKeyDown(KeyBinds.recordingPlayToggle, false))
-            KeyBinds.toggleRecordingPlay();
+        if(event.getAction() == 1) {
+            if(KeyBinds.transferAllOfStack.matchesKey(event.getKey(), event.getScanCode()))
+                InventoryManagement.shiftDoubleClickSlot();
+            if(KeyBinds.recordingPlayToggle.matchesKey(event.getKey(), event.getScanCode()))
+                KeyBinds.toggleRecordingPlay();
+        }
 
     }
 
@@ -260,7 +304,7 @@ public class EventHandler {
                 KeyBinding pressedKey = null;
                 int pressedCount = 0;
                 for (KeyBinding key : hotBarKeys) {
-                    if(KeyBinds.isKeyDown(key, false)) {
+                    if(key.matchesKey(event.getKeyCode(), event.getScanCode())) {
                         pressedKey = key;
                         pressedCount++;
                     }
@@ -277,6 +321,7 @@ public class EventHandler {
 
     @SubscribeEvent
     public void onGuiOpen(GuiOpenEvent event) {
+        LOGGER.debug(event.getGui());
 //        if(event.getGui() == null) InventoryManagement.tickQueue.clear();
         Recordings.resetPlayerActions(false);
         SnapCraftUtils.updateLastAccessedPV(event.getGui());
@@ -332,20 +377,21 @@ public class EventHandler {
 //                mc.fontRenderer.drawString(matrix, Long.toString(mc.world.getGameTime()), 0,0,0);
 //            mc.fontRenderer.drawString(matrix, Long.toString(InventoryManagement.executedTick), 0, 10, 0);
             if(!mc.gameSettings.showDebugInfo) {
-                if(mc.player != null) {
-                    mc.fontRenderer.drawString(matrix, String.valueOf(mc.player.rotationPitch), 0, 0, 0);
-                    mc.fontRenderer.drawString(matrix, String.valueOf(mc.player.rotationYaw), 0, 10, 0);
-                }
+//                if(mc.player != null) {
+//                    mc.fontRenderer.drawString(matrix, String.valueOf(mc.player.rotationPitch), 0, 0, 0);
+//                    mc.fontRenderer.drawString(matrix, String.valueOf(mc.player.rotationYaw), 0, 10, 0);
+//                }
                 int recQueueSize = Recordings.recordingQueue.size();
-                mc.fontRenderer.drawString(matrix, String.format("Recording: %s, Length: %s", Recordings.recordActions, recQueueSize > 0  && !Recordings.recordingQueue.get(recQueueSize - 1).saving ? Recordings.recordingQueue.get(recQueueSize - 1).ticks.size() : null), 0, 20, 0);
-                mc.fontRenderer.drawString(matrix, String.format("Playing: %s, Length: %s, Played: %s", Recordings.playRecordings, Recordings.playingRecording != null ? Recordings.playingRecording.ticks.size() : null, Recordings.playedTicks), 0, 30, 0);
-                mc.fontRenderer.drawString(matrix, String.format("Screen: %s", mc.currentScreen), 0, 40, 0);
-                mc.fontRenderer.drawString(matrix, Recordings.gettingRecording != null && Recordings.gettingRecording.isAlive() ? "Searching... " + (int) (System.currentTimeMillis() - Recordings.recordingSearchStart) / 1000  + "s" : "Done.", 0 , 50, 0);
-                mc.fontRenderer.drawString(matrix, "Cancel input until: " + (int)(cancelInputUntil - System.currentTimeMillis()), 0, 60, 0);
-                mc.fontRenderer.drawString(matrix, "Full Slots: " + InventoryManagement.getFilledSlotCount(), 0, 70, 0);
-                mc.fontRenderer.drawString(matrix, "Closest Player: " + Recordings.closestPlayerDistance(), 0, 80, 0);
-                mc.fontRenderer.drawString(matrix, "Socket Connected: " + WebSocketHandler.connected, 0, 90, 0);
-                mc.fontRenderer.drawString(matrix, "Mining ticks missed: " + Recordings.ticksMiningNothing, 0, 100, 0);
+                mc.fontRenderer.drawString(matrix, String.format("Recording: %s, Length: %s", Recordings.recordActions, recQueueSize > 0  && !Recordings.recordingQueue.get(recQueueSize - 1).saving ? Recordings.recordingQueue.get(recQueueSize - 1).ticks.size() : null), 0, 0, 0);
+                mc.fontRenderer.drawString(matrix, String.format("Playing: %s, Length: %s, Played: %s", Recordings.playRecordings, Recordings.playingRecording != null ? Recordings.playingRecording.ticks.size() : null, Recordings.playedTicks), 0, 10, 0);
+                mc.fontRenderer.drawString(matrix, String.format("Screen: %s", mc.currentScreen), 0, 20, 0);
+                mc.fontRenderer.drawString(matrix, Recordings.gettingRecording != null && Recordings.gettingRecording.isAlive() ? "Searching... " + (int) (System.currentTimeMillis() - Recordings.recordingSearchStart) / 1000  + "s" : "Done.", 0 , 30, 0);
+                mc.fontRenderer.drawString(matrix, "Cancel input until: " + (int)(cancelInputUntil - System.currentTimeMillis()), 0, 40, 0);
+                mc.fontRenderer.drawString(matrix, "Full Slots: " + InventoryManagement.getFilledSlotCount(), 0, 50, 0);
+                mc.fontRenderer.drawString(matrix, "Closest Player: " + Recordings.closestPlayerDistance(), 0, 60, 0);
+                mc.fontRenderer.drawString(matrix, "Socket Connected: " + WebSocketHandler.connected, 0, 70, 0);
+                mc.fontRenderer.drawString(matrix, "Mining ticks missed: " + Recordings.ticksMiningNothing, 0, 80, 0);
+                mc.fontRenderer.drawString(matrix, "Discord status: " + WebSocketHandler.discordStatus, 0, 90, 0);
                 //                ArrayList<SnapCraftUtils.Coordinates> emptyBLocks = SnapCraftUtils.getEmptyMineBlocks();
 //                mc.fontRenderer.drawString(matrix, String.format("Mine percent empty: %s, percent similar: %s", emptyBLocks != null ? (int) ((double) emptyBLocks.size() / (72 * 49 * 49) * 100) : null, Recordings.playingRecording != null ? SnapCraftUtils.percentMinesEqual(emptyBLocks, Recordings.playingRecording.ticks.get(0).emptyMineBlocks) : null), 0 , 50, 0);
                 GuiOverlay.renderSliceTimer(matrix);
@@ -359,7 +405,9 @@ public class EventHandler {
     @SubscribeEvent
     public void drawForeground(GuiContainerEvent.DrawForeground event) {
         if(IsadoreMod.disabled) return;
-        GuiOverlay.renderLayoutItems(event.getMatrixStack());
+        MatrixStack matrix = event.getMatrixStack();
+        GuiOverlay.renderLayoutItems(matrix);
+        GuiOverlay.renderSlotIDs(event.getMatrixStack());
     }
 
     @SubscribeEvent
@@ -384,6 +432,7 @@ public class EventHandler {
 
     @SubscribeEvent
     public void onMessageSent(ClientChatEvent event) {
+        lastMessageSentTimestamp = System.currentTimeMillis();
         String msg = event.getMessage();
         String lowercased = event.getMessage().toLowerCase(Locale.ROOT);
         if(mc.player == null) return;
@@ -391,22 +440,37 @@ public class EventHandler {
             IsadoreMod.disabled = !IsadoreMod.disabled;
             mc.gameSettings.heldItemTooltips = IsadoreMod.disabled;
             event.setCanceled(true);
-//            mc.player.sendMessage(new StringTextComponent(String.format("%sIsadoreMod %s", IsadoreMod.disabled ? "\u00A7c" : "\u00A7a", IsadoreMod.disabled ? "disabled" : "enabled")), null);
+            SnapCraftUtils.sendClientMessage(String.format("%sIsadoreMod %s", IsadoreMod.disabled ? "\u00A7c" : "\u00A7a", IsadoreMod.disabled ? "disabled" : "enabled"));
         }
         if(IsadoreMod.disabled) return;
-        if(lowercased.startsWith("/pwname")) {
+        if(lowercased.startsWith("/ah sell ")) {
+            try {
+                int price = Integer.parseInt(msg.substring(9));
+                NumberFormat format = NumberFormat.getInstance();
+                format.setGroupingUsed(true);
+                lastAHSellPrice = format.format(price);
+                lastAHSellItem = mc.player.getHeldItemMainhand().copy();
+            } catch (Exception ignored) {
+                lastAHSellPrice = null;
+                lastAHSellItem = null;
+            }
+        }
+        Map<String, Runnable> clientCommands = new HashMap<>();
+        clientCommands.put("pwname", () -> {
             String name = "";
             if(msg.length() > 8) name = msg.substring(8).trim();
             UserData.profile.pwName = name;
-            mc.player.sendMessage(new StringTextComponent(String.format("Pwarp name stored: %s", name.replace("&", "\u00A7"))), null);
+            SnapCraftUtils.sendClientMessage(String.format("Pwarp name stored: %s", name.replace("&", "\u00A7")));
             event.setCanceled(true);
-        } else if(lowercased.startsWith("/pwitem")) {
+        });
+        clientCommands.put("pwitem", () -> {
             String item = "";
             if(msg.length() > 8) item = msg.substring(8).trim();
             UserData.profile.pwItem = item;
-            mc.player.sendMessage(new StringTextComponent(String.format("Pwarp item stored: %s", item)), null);
+            SnapCraftUtils.sendClientMessage(String.format("Pwarp item stored: %s", item));
             event.setCanceled(true);
-        } else if(lowercased.startsWith("/rec")) {
+        });
+        clientCommands.put("rec", () -> {
             if(lowercased.contains("play")) {
                 KeyBinds.toggleRecordingPlay();
             } else if(lowercased.contains("reset")) {
@@ -417,17 +481,43 @@ public class EventHandler {
             } else  {
                 Recordings.recordActions = !Recordings.recordActions;
             }
-            event.setCanceled(true);
-        } else if(lowercased.startsWith("/ah sell ")) {
+        });
+        clientCommands.put("screenshot", () -> {
             try {
-                int price = Integer.parseInt(msg.substring(9));
-                NumberFormat format = NumberFormat.getInstance();
-                format.setGroupingUsed(true);
-                lastAHSellPrice = format.format(price);
-                lastAHSellItem = mc.player.getHeldItemMainhand().copy();
-            } catch (Exception ignored) {
-                lastAHSellPrice = null;
-                lastAHSellItem = null;
+                NativeImage img = ScreenShotHelper.createScreenshot(mc.getMainWindow().getFramebufferWidth(), mc.getMainWindow().getFramebufferHeight(), this.mc.getFramebuffer());
+                WebSocketHandler.sendMessage(WebSocketHandler.MessageType.ScreenShot, new Gson().toJson(img.getBytes()));
+            } catch (Exception ignored) {}
+        });
+        clientCommands.put("closescreen", () -> {
+            if(mc.currentScreen != null)
+                mc.currentScreen.closeScreen();
+        });
+        clientCommands.put("slotclick", () -> {
+            String[] args = lowercased.split(" ");
+            if(args.length >= 3) {
+                ClickType type = ClickType.valueOf(args[1].toUpperCase());
+                int slotID = Integer.parseInt(args[2]);
+                int mouseButton = 0;
+                if(args.length == 4) {
+                    mouseButton = Integer.parseInt(args[3]);
+                }
+                tickQueue.add(new InventoryManagement.MouseAction(slotID, mouseButton, type));
+            }
+        });
+        clientCommands.put("showslotids", () -> {
+            UserData.profile.renderSlotIDs = !UserData.profile.renderSlotIDs;
+            SnapCraftUtils.sendClientMessage("Slot IDs " + (UserData.profile.renderSlotIDs ? "shown" : "hidden"));
+        });
+        clientCommands.put("continue", null);
+        clientCommands.put("commandlist", () -> {
+            String commands = clientCommands.keySet().stream().map(k -> k + "\n").collect(Collectors.joining());
+            SnapCraftUtils.sendClientMessage("Command List:\n" + commands);
+        });
+        for (Map.Entry<String, Runnable> e : clientCommands.entrySet()) {
+            if(lowercased.startsWith("/" + e.getKey())) {
+                if(e.getValue() != null)
+                    e.getValue().run();
+                event.setCanceled(true);
             }
         }
     }

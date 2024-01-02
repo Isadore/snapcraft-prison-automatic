@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.player.ClientPlayerEntity;
 import net.minecraftforge.event.TickEvent;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.io.*;
 import java.nio.file.Files;
@@ -32,6 +33,7 @@ public class UserData {
     public static PlayerProfile profile = new PlayerProfile();
 
     public static class PlayerProfile {
+        public boolean renderSlotIDs = false;
         @Nullable
         public String pwItem = null;
         @Nullable
@@ -131,7 +133,8 @@ public class UserData {
                 }
             }
         } catch (Exception e) {
-            IsadoreMod.LOGGER.error("Failed initializing directories: {}", e.getMessage());
+            IsadoreMod.LOGGER.error("Failed initializing directories");
+            e.printStackTrace();
         }
     }
 
@@ -174,6 +177,7 @@ public class UserData {
                     ArrayList<InventoryManagement.StoredSlot> slots = new Gson().fromJson(reader, new TypeToken<ArrayList<InventoryManagement.StoredSlot>>(){}.getType());
                     layouts.add(new Layout(slots, layoutID));
                 } catch (Exception e) {
+                    IsadoreMod.LOGGER.error("Failed reading inventory layout");
                     e.printStackTrace();
                 }
             }

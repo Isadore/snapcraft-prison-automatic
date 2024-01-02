@@ -6,22 +6,15 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 import net.minecraft.client.Minecraft;
-import net.minecraft.inventory.container.Slot;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.IPacket;
 import net.minecraft.network.play.client.CClickWindowPacket;
 import net.minecraft.network.play.client.CPlayerTryUseItemPacket;
-import net.minecraft.network.play.server.SChatPacket;
-import net.minecraft.network.play.server.SEntityEquipmentPacket;
-import net.minecraft.network.play.server.SSetSlotPacket;
-import net.minecraft.network.play.server.SWindowItemsPacket;
+import net.minecraft.network.play.server.*;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class PacketHandler extends ChannelDuplexHandler {
@@ -47,14 +40,18 @@ public class PacketHandler extends ChannelDuplexHandler {
     private void onPacket(IPacket<?> packet, boolean incoming) {
 //        if(incoming)
 //            IsadoreMod.LOGGER.info(packet.getClass().getSimpleName());
-        if(packet instanceof CClickWindowPacket) {
-            CClickWindowPacket ClickWindowPacket = (CClickWindowPacket) packet;
-            IsadoreMod.LOGGER.info("Stack: {}, Slot: {}, Button: {}, Type: {}", ClickWindowPacket.getClickedItem(), ClickWindowPacket.getSlotId(), ClickWindowPacket.getUsedButton(), ClickWindowPacket.getClickType());
-        }
+//        if(packet instanceof CClickWindowPacket) {
+//            CClickWindowPacket ClickWindowPacket = (CClickWindowPacket) packet;
+//            IsadoreMod.LOGGER.info("Stack: {}, Slot: {}, Button: {}, Type: {}", ClickWindowPacket.getClickedItem(), ClickWindowPacket.getSlotId(), ClickWindowPacket.getUsedButton(), ClickWindowPacket.getClickType());
+//        }
 //        if(packet instanceof SSetSlotPacket) {
 //            SSetSlotPacket slotPacket = (SSetSlotPacket) packet;
 //            IsadoreMod.LOGGER.info("Slot: {}, Stack: {}", slotPacket.getSlot(), slotPacket.getStack());
 //        }
+        if(packet instanceof SPlayerPositionLookPacket) {
+            SPlayerPositionLookPacket sPlayerPositionLookPacket = (SPlayerPositionLookPacket) packet;
+            IsadoreMod.LOGGER.debug("id: {}, x: {}, y: {}, z: {}", sPlayerPositionLookPacket.getTeleportId(), sPlayerPositionLookPacket.getX(), sPlayerPositionLookPacket.getY(), sPlayerPositionLookPacket.getZ());
+        }
         Method[] methods = this.getClass().getDeclaredMethods();
         for (Method m : methods) {
             Type[] params = m.getGenericParameterTypes();
