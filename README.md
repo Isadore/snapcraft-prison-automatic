@@ -14,6 +14,8 @@
 - Show and hide custom features for screen recording
 
 ### Preview of Automated Gameplay
+[https://youtu.be/XdQ_zjCe4Z4](https://youtu.be/XdQ_zjCe4Z4)
+
 [![Main Preview](http://img.youtube.com/vi/XdQ_zjCe4Z4/0.jpg)](https://youtu.be/XdQ_zjCe4Z4)
 
 
